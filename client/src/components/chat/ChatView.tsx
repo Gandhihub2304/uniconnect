@@ -1,0 +1,1445 @@
+'use client';
+
+import React, { useState, useRef, useEffect } from 'react';
+import { 
+  Search, 
+  Phone, 
+  Video, 
+  Mic, 
+  Paperclip, 
+  Send, 
+  ShieldCheck, 
+  Flame,
+  CheckCheck,
+  ChevronDown,
+  UserPlus,
+  Lock,
+  MessageCircle,
+  Camera,
+  Download,
+  Eye,
+  EyeOff,
+  FileText,
+  X,
+  RefreshCw,
+  Image as ImageIcon,
+  MoreVertical,
+  Edit3,
+  Trash2,
+  Smile,
+  Check
+} from 'lucide-react';
+import { useAppStore } from '@/store/useAppStore';
+import { apiGet, apiPost, apiPut, apiDelete, apiUpload } from '@/lib/api';
+import { getSocket } from '@/lib/socket';
+
+type DisappearingTimer = 'off' | '10s' | '24h' | '7d';
+
+export const ChatView: React.FC = () => {
+  const { startCall, user, pendingChatUserId, clearPendingChatUser } = useAppStore();
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [inputText, setInputText] = useState('');
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [disappearingTimer, setDisappearingTimer] = useState<DisappearingTimer>('off');
+  const [isTimerMenuOpen, setIsTimerMenuOpen] = useState(false);
+  const chatFileRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+
+  // View-Once state for input bar
+  const [isViewOnceSelected, setIsViewOnceSelected] = useState(false);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+
+  // Camera modal state
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Lightbox view modals
+  const [previewImageModal, setPreviewImageModal] = useState<string | null>(null);
+  const [viewOnceModalMedia, setViewOnceModalMedia] = useState<{ url: string; msgId: string } | null>(null);
+
+  // 3-dots message menu & inline edit states
+  const [activeMenuMsgId, setActiveMenuMsgId] = useState<string | null>(null);
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+
+  const [chats, setChats] = useState<any[]>([]);
+  const [isLoadingChats, setIsLoadingChats] = useState(true);
+  const [messages, setMessages] = useState<Record<string, any[]>>({});
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+
+  const activeChat = chats.find(c => c.id === activeChatId) || chats[0];
+  const activeMessages = activeChatId ? (messages[activeChatId] || []) : [];
+
+  // Fetch real user chats
+  const fetchChats = async () => {
+    try {
+      setIsLoadingChats(true);
+      const data = await apiGet('/api/chats');
+      if (data.success && data.chats) {
+        const formattedChats = data.chats.map((c: any) => ({
+          id: c._id,
+          name: c.name || 'Chat',
+          username: c.username || 'user',
+          avatar: c.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+          status: 'Online',
+          lastSeen: 'Active now',
+          unread: 0,
+          isFriend: true
+        }));
+        setChats(formattedChats);
+        if (formattedChats.length > 0 && !activeChatId) {
+          setActiveChatId(formattedChats[0].id);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch chats:', err);
+    } finally {
+      setIsLoadingChats(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchChats();
+  }, [user?._id]);
+
+  // If navigated here via "Message" from a suggestion/search result, open (or create) that 1:1 chat
+  useEffect(() => {
+    if (!pendingChatUserId) return;
+    (async () => {
+      try {
+        const data = await apiPost('/api/chats', { participantId: pendingChatUserId });
+        if (data.success && data.chat) {
+          await fetchChats();
+          setActiveChatId(data.chat._id);
+        }
+      } catch (err) {
+        console.error('Failed to open chat:', err);
+      } finally {
+        clearPendingChatUser();
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingChatUserId]);
+
+  // Fetch messages for current active chat
+  useEffect(() => {
+    if (!activeChatId) return;
+    const fetchMessages = async () => {
+      try {
+        setIsLoadingMessages(true);
+        const data = await apiGet(`/api/chats/${activeChatId}/messages`);
+        if (data.success && data.messages) {
+          const myId = String(user?._id || '');
+          const formattedMsgs = data.messages.map((m: any) => {
+            const expiresAtMs = m.expiresAt ? new Date(m.expiresAt).getTime() : null;
+            const remainingTtl = expiresAtMs ? Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000)) : null;
+
+            return {
+              id: m._id || m.id,
+              sender: m.senderName || 'User',
+              avatar: m.senderAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+              text: m.text,
+              mediaUrl: m.mediaUrl,
+              mediaType: m.mediaType,
+              fileName: m.fileName,
+              fileSize: m.fileSize,
+              isViewOnce: m.isViewOnce,
+              viewedBy: m.viewedBy || [],
+              reactions: m.reactions || [],
+              isDeletedForEveryone: m.isDeletedForEveryone || false,
+              isEdited: m.isEdited || false,
+              expiresAt: expiresAtMs,
+              ttl: remainingTtl,
+              disappearingTimer: m.disappearingTimer || 'off',
+              time: new Date(m.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              isMe: String(m.senderId) === myId,
+            };
+          });
+          setMessages(prev => ({ ...prev, [activeChatId]: formattedMsgs }));
+        }
+      } catch (err) {
+        console.error('Failed to fetch chat messages:', err);
+      } finally {
+        setIsLoadingMessages(false);
+      }
+    };
+
+    fetchMessages();
+  }, [activeChatId, user?._id]);
+
+  // Real-time socket events for dynamic instant updates
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket || !activeChatId) return;
+
+    // Join active chat room
+    socket.emit('join_chat', activeChatId);
+
+    const handleNewMsg = (m: any) => {
+      if (m.chatId !== activeChatId) return;
+      const myId = String(user?._id || '');
+      const expiresAtMs = m.expiresAt ? new Date(m.expiresAt).getTime() : null;
+      const remainingTtl = expiresAtMs ? Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000)) : null;
+
+      const formatted = {
+        id: m._id || m.id,
+        sender: m.senderName || 'User',
+        avatar: m.senderAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+        text: m.text,
+        mediaUrl: m.mediaUrl,
+        mediaType: m.mediaType,
+        fileName: m.fileName,
+        fileSize: m.fileSize,
+        isViewOnce: m.isViewOnce,
+        viewedBy: m.viewedBy || [],
+        reactions: m.reactions || [],
+        isDeletedForEveryone: m.isDeletedForEveryone || false,
+        isEdited: m.isEdited || false,
+        expiresAt: expiresAtMs,
+        ttl: remainingTtl,
+        disappearingTimer: m.disappearingTimer || 'off',
+        time: new Date(m.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isMe: String(m.senderId) === myId,
+      };
+
+      setMessages(prev => {
+        const existing = prev[activeChatId] || [];
+        // 1. If already present with same DB ID, ignore duplicate
+        if (existing.some(x => x.id === formatted.id)) return prev;
+
+        // 2. If optimistic message exists from me, replace it with official server message
+        const optIdx = existing.findIndex(x => x.isMe && x.text === formatted.text && (!formatted.mediaUrl || x.mediaUrl === formatted.mediaUrl));
+        if (optIdx !== -1) {
+          const copy = [...existing];
+          copy[optIdx] = formatted;
+          return { ...prev, [activeChatId]: copy };
+        }
+
+        // 3. Otherwise append new incoming message
+        return { ...prev, [activeChatId]: [...existing, formatted] };
+      });
+    };
+
+    const handleViewOnceOpened = (data: { messageId: string; viewedBy: string[] }) => {
+      setMessages(prev => {
+        const updated = { ...prev };
+        if (activeChatId && updated[activeChatId]) {
+          updated[activeChatId] = updated[activeChatId].map(m => 
+            m.id === data.messageId ? { ...m, viewedBy: data.viewedBy } : m
+          );
+        }
+        return updated;
+      });
+    };
+
+    const handleMsgEdited = (data: { messageId: string; text: string; isEdited: boolean }) => {
+      setMessages(prev => {
+        const updated = { ...prev };
+        if (activeChatId && updated[activeChatId]) {
+          updated[activeChatId] = updated[activeChatId].map(m => 
+            m.id === data.messageId ? { ...m, text: data.text, isEdited: true } : m
+          );
+        }
+        return updated;
+      });
+    };
+
+    const handleMsgDeleted = (data: { messageId: string; deleteType: string; isDeletedForEveryone?: boolean; deletedFor?: string[]; userId?: string }) => {
+      const myId = String(user?._id || '');
+      setMessages(prev => {
+        const updated = { ...prev };
+        if (activeChatId && updated[activeChatId]) {
+          if (data.deleteType === 'everyone') {
+            updated[activeChatId] = updated[activeChatId].map(m => 
+              m.id === data.messageId ? { ...m, isDeletedForEveryone: true, text: '🚫 This message was deleted', mediaUrl: null, mediaType: null, isViewOnce: false } : m
+            );
+          } else if (data.userId === myId) {
+            updated[activeChatId] = updated[activeChatId].filter(m => m.id !== data.messageId);
+          }
+        }
+        return updated;
+      });
+    };
+
+    const handleMsgReacted = (data: { messageId: string; reactions: any[] }) => {
+      setMessages(prev => {
+        const updated = { ...prev };
+        if (activeChatId && updated[activeChatId]) {
+          updated[activeChatId] = updated[activeChatId].map(m => 
+            m.id === data.messageId ? { ...m, reactions: data.reactions } : m
+          );
+        }
+        return updated;
+      });
+    };
+
+    const handleDisappearingTimerUpdated = (data: { chatId: string; disappearingTimer: DisappearingTimer }) => {
+      if (data.chatId === activeChatId) {
+        setDisappearingTimer(data.disappearingTimer);
+      }
+      setChats(prev => prev.map(c => c.id === data.chatId ? { ...c, disappearingTimer: data.disappearingTimer } : c));
+    };
+
+    const handleChatCleared = (data: { chatId: string }) => {
+      setMessages(prev => ({ ...prev, [data.chatId]: [] }));
+    };
+
+    socket.on('new_message', handleNewMsg);
+    socket.on('view_once_opened', handleViewOnceOpened);
+    socket.on('message_edited', handleMsgEdited);
+    socket.on('message_deleted', handleMsgDeleted);
+    socket.on('message_reacted', handleMsgReacted);
+    socket.on('disappearing_timer_updated', handleDisappearingTimerUpdated);
+    socket.on('chat_cleared', handleChatCleared);
+
+    return () => {
+      socket.emit('leave_chat', activeChatId);
+      socket.off('new_message', handleNewMsg);
+      socket.off('view_once_opened', handleViewOnceOpened);
+      socket.off('message_edited', handleMsgEdited);
+      socket.off('message_deleted', handleMsgDeleted);
+      socket.off('message_reacted', handleMsgReacted);
+      socket.off('disappearing_timer_updated', handleDisappearingTimerUpdated);
+      socket.off('chat_cleared', handleChatCleared);
+    };
+  }, [activeChatId, user?._id]);
+
+  const scrollToBottom = (smooth = true) => {
+    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
+  };
+
+  // Auto scroll to latest message when switching chat or receiving new messages
+  useEffect(() => {
+    scrollToBottom(false);
+  }, [activeChatId]);
+
+  useEffect(() => {
+    if (activeMessages.length > 0) {
+      scrollToBottom(true);
+    }
+  }, [activeMessages.length]);
+
+  const handleChatScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const isFarFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight > 120;
+    setShowScrollBottom(isFarFromBottom);
+  };
+
+  // Countdown timer effect for 10s disappearing messages
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setMessages(prev => {
+        const updated = { ...prev };
+        let changed = false;
+        Object.keys(updated).forEach(chatId => {
+          const filtered = updated[chatId].filter(msg => {
+            if (msg.expiresAt) {
+              const remaining = Math.max(0, Math.ceil((msg.expiresAt - Date.now()) / 1000));
+              if (remaining <= 0) {
+                changed = true;
+                return false;
+              }
+              msg.ttl = remaining;
+            }
+            return true;
+          });
+          if (filtered.length !== updated[chatId].length) {
+            changed = true;
+            updated[chatId] = filtered;
+          }
+        });
+        return changed ? updated : prev;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Cleanup camera stream on unmount
+  useEffect(() => {
+    return () => {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [cameraStream]);
+
+  // Handle standard text send
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputText.trim() || !activeChatId) return;
+
+    const expiresAt = disappearingTimer === '10s' ? Date.now() + 10000 : null;
+    const sendText = inputText;
+    setInputText('');
+
+    const optimisticMsg = {
+      id: Date.now().toString(),
+      sender: user?.name || 'You',
+      avatar: user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+      text: sendText,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isMe: true,
+      expiresAt,
+      ttl: disappearingTimer === '10s' ? 10 : null,
+      timerType: disappearingTimer
+    };
+
+    setMessages(prev => ({
+      ...prev,
+      [activeChatId]: [...(prev[activeChatId] || []), optimisticMsg]
+    }));
+
+    try {
+      const res = await apiPost(`/api/chats/${activeChatId}/messages`, { text: sendText, disappearingTimer });
+      if (res.success && res.message) {
+        const realId = res.message._id || res.message.id;
+        setMessages(prev => {
+          const list = prev[activeChatId] || [];
+          const updated = list.map(m => m.id === optimisticMsg.id ? { ...m, id: realId } : m);
+          return { ...prev, [activeChatId]: updated };
+        });
+      }
+    } catch (err) {
+      console.error('Failed to send message:', err);
+    }
+  };
+
+  // Handle File upload (Photos, Documents, Videos, PDFs)
+  const handleChatFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeChatId) return;
+
+    try {
+      setIsUploadingFile(true);
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // Upload file to backend server
+      const uploadRes = await apiUpload('/api/upload', formData);
+      const fileUrl = uploadRes.fileUrl || uploadRes.url;
+
+      let mediaType: 'image' | 'video' | 'audio' | 'document' = 'document';
+      if (file.type.startsWith('image/')) mediaType = 'image';
+      else if (file.type.startsWith('video/')) mediaType = 'video';
+      else if (file.type.startsWith('audio/')) mediaType = 'audio';
+
+      const isViewOnce = isViewOnceSelected && (mediaType === 'image' || mediaType === 'video');
+
+      const fileMsg = {
+        id: Date.now().toString(),
+        sender: user?.name || 'You',
+        avatar: user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+        text: isViewOnce ? '📷 1x View Once Photo' : (mediaType === 'image' ? '📷 Photo' : file.name),
+        mediaUrl: fileUrl,
+        mediaType,
+        fileName: file.name,
+        fileSize: file.size,
+        isViewOnce,
+        viewedBy: [],
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isMe: true,
+      };
+
+      setMessages(prev => ({
+        ...prev,
+        [activeChatId]: [...(prev[activeChatId] || []), fileMsg]
+      }));
+
+      // Post message to server
+      await apiPost(`/api/chats/${activeChatId}/messages`, {
+        text: fileMsg.text,
+        mediaUrl: fileUrl,
+        mediaType,
+        fileName: file.name,
+        fileSize: file.size,
+        isViewOnce,
+        disappearingTimer
+      });
+
+      // Reset view once toggle
+      setIsViewOnceSelected(false);
+    } catch (err) {
+      console.error('Failed to upload attachment:', err);
+    } finally {
+      setIsUploadingFile(false);
+      if (chatFileRef.current) chatFileRef.current.value = '';
+    }
+  };
+
+  // Camera Functions
+  const startCamera = async () => {
+    setCapturedPhoto(null);
+    setIsCameraOpen(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      setCameraStream(stream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error('Unable to access camera:', err);
+      alert('Unable to access camera. Please check camera permissions.');
+      setIsCameraOpen(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+    setIsCameraOpen(false);
+    setCapturedPhoto(null);
+  };
+
+  const takePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      setCapturedPhoto(dataUrl);
+    }
+  };
+
+  const sendCameraPhoto = async () => {
+    if (!capturedPhoto || !activeChatId) return;
+
+    try {
+      setIsUploadingFile(true);
+      // Convert dataUrl to Blob
+      const res = await fetch(capturedPhoto);
+      const blob = await res.blob();
+      const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const uploadRes = await apiUpload('/api/upload', formData);
+      const fileUrl = uploadRes.fileUrl || uploadRes.url;
+
+      const photoMsg = {
+        id: Date.now().toString(),
+        sender: user?.name || 'You',
+        avatar: user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+        text: isViewOnceSelected ? '📷 1x View Once Photo' : '📷 Photo',
+        mediaUrl: fileUrl,
+        mediaType: 'image' as const,
+        fileName: file.name,
+        fileSize: file.size,
+        isViewOnce: isViewOnceSelected,
+        viewedBy: [],
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isMe: true,
+      };
+
+      setMessages(prev => ({
+        ...prev,
+        [activeChatId]: [...(prev[activeChatId] || []), photoMsg]
+      }));
+
+      await apiPost(`/api/chats/${activeChatId}/messages`, {
+        text: photoMsg.text,
+        mediaUrl: fileUrl,
+        mediaType: 'image',
+        fileName: file.name,
+        fileSize: file.size,
+        isViewOnce: isViewOnceSelected,
+        disappearingTimer
+      });
+
+      stopCamera();
+      setIsViewOnceSelected(false);
+    } catch (err) {
+      console.error('Failed to send camera photo:', err);
+    } finally {
+      setIsUploadingFile(false);
+    }
+  };
+
+  // Close View-Once Lightbox and mark as viewed
+  const closeViewOnceModal = async () => {
+    if (!viewOnceModalMedia) return;
+    const msgId = viewOnceModalMedia.msgId;
+
+    // Mark as viewed locally
+    const myId = String(user?._id || '');
+    setMessages(prev => {
+      const updated = { ...prev };
+      if (activeChatId && updated[activeChatId]) {
+        updated[activeChatId] = updated[activeChatId].map(m => {
+          if (m.id === msgId) {
+            return { ...m, viewedBy: [...(m.viewedBy || []), myId] };
+          }
+          return m;
+        });
+      }
+      return updated;
+    });
+
+    setViewOnceModalMedia(null);
+
+    // Call server to record viewed status
+    try {
+      await apiPost(`/api/chats/messages/${msgId}/view-once`);
+    } catch (err) {
+      console.error('Failed to mark view-once as read:', err);
+    }
+  };
+
+  // Delete for me (local removal for user)
+  const handleDeleteForMe = async (msgId: string) => {
+    try {
+      setActiveMenuMsgId(null);
+      setMessages(prev => {
+        const updated = { ...prev };
+        if (activeChatId && updated[activeChatId]) {
+          updated[activeChatId] = updated[activeChatId].filter(m => m.id !== msgId);
+        }
+        return updated;
+      });
+      await apiDelete(`/api/chats/messages/${msgId}?type=me`);
+    } catch (err) {
+      console.error('Failed to delete for me:', err);
+    }
+  };
+
+  // Delete for everyone
+  const handleDeleteForEveryone = async (msgId: string) => {
+    try {
+      setActiveMenuMsgId(null);
+      setMessages(prev => {
+        const updated = { ...prev };
+        if (activeChatId && updated[activeChatId]) {
+          updated[activeChatId] = updated[activeChatId].map(m => {
+            if (m.id === msgId) {
+              return { 
+                ...m, 
+                isDeletedForEveryone: true, 
+                text: '🚫 This message was deleted', 
+                mediaUrl: null, 
+                mediaType: null,
+                isViewOnce: false 
+              };
+            }
+            return m;
+          });
+        }
+        return updated;
+      });
+      await apiDelete(`/api/chats/messages/${msgId}?type=everyone`);
+    } catch (err) {
+      console.error('Failed to delete for everyone:', err);
+    }
+  };
+
+  // Save edit message
+  const handleSaveEdit = async (msgId: string) => {
+    if (!editText.trim()) return;
+    try {
+      setEditingMsgId(null);
+      setMessages(prev => {
+        const updated = { ...prev };
+        if (activeChatId && updated[activeChatId]) {
+          updated[activeChatId] = updated[activeChatId].map(m => {
+            if (m.id === msgId) {
+              return { ...m, text: editText, isEdited: true };
+            }
+            return m;
+          });
+        }
+        return updated;
+      });
+      await apiPut(`/api/chats/messages/${msgId}`, { text: editText });
+    } catch (err) {
+      console.error('Failed to edit message:', err);
+    }
+  };
+
+  // Emoji reaction handler
+  const handleReact = async (msgId: string, emoji: string) => {
+    try {
+      setActiveMenuMsgId(null);
+      const myId = String(user?._id || '');
+      setMessages(prev => {
+        const updated = { ...prev };
+        if (activeChatId && updated[activeChatId]) {
+          updated[activeChatId] = updated[activeChatId].map(m => {
+            if (m.id === msgId) {
+              const reactions = (m.reactions || []).filter((r: any) => r.userId !== myId);
+              reactions.push({ emoji, userId: myId });
+              return { ...m, reactions };
+            }
+            return m;
+          });
+        }
+        return updated;
+      });
+      await apiPost(`/api/chats/messages/${msgId}/react`, { emoji });
+    } catch (err) {
+      console.error('Failed to react to message:', err);
+    }
+  };
+
+  // Change disappearing timer for chat (syncs for both users)
+  const handleSetDisappearingTimer = async (timer: DisappearingTimer) => {
+    setDisappearingTimer(timer);
+    setIsTimerMenuOpen(false);
+    if (!activeChatId) return;
+    try {
+      await apiPut(`/api/chats/${activeChatId}/disappearing`, { timer });
+    } catch (err) {
+      console.error('Failed to update disappearing timer:', err);
+    }
+  };
+
+  // Clear chat history for both participants
+  const handleClearChat = async () => {
+    if (!activeChatId) return;
+    if (!window.confirm('Are you sure you want to clear all chat history and media for both participants?')) return;
+
+    try {
+      setMessages(prev => ({ ...prev, [activeChatId]: [] }));
+      await apiDelete(`/api/chats/${activeChatId}/clear`);
+    } catch (err) {
+      console.error('Failed to clear chat:', err);
+    }
+  };
+
+  const handleVoiceRecordToggle = () => {
+    if (!activeChatId) return;
+    if (isRecordingVoice) {
+      setIsRecordingVoice(false);
+      const text = '🎙️ Voice Note (0:12s)';
+      const expiresAt = disappearingTimer === '10s' ? Date.now() + 10000 : null;
+      const voiceMsg = {
+        id: Date.now().toString(),
+        sender: user?.name || 'You',
+        avatar: user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+        text,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isMe: true,
+        expiresAt,
+        ttl: disappearingTimer === '10s' ? 10 : null,
+        timerType: disappearingTimer
+      };
+      setMessages(prev => ({
+        ...prev,
+        [activeChatId]: [...(prev[activeChatId] || []), voiceMsg]
+      }));
+      apiPost(`/api/chats/${activeChatId}/messages`, { text }).catch(console.error);
+    } else {
+      setIsRecordingVoice(true);
+    }
+  };
+
+  const filteredChats = chats.filter(c => 
+    c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    c.username.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  return (
+    <div className="h-[calc(100vh-6.5rem)] grid grid-cols-1 md:grid-cols-3 gap-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-2 overflow-hidden select-none relative">
+      {/* Left Chat List Column (Static Container) */}
+      <div className="md:col-span-1 border-r border-slate-200 dark:border-slate-800 p-3 flex flex-col h-full overflow-hidden">
+        {/* Header & Search Bar (Fixed Top) */}
+        <div className="space-y-3 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-black text-slate-900 dark:text-white">Messages</h2>
+            <span className="px-2.5 py-0.5 bg-blue-100 dark:bg-blue-950 text-blue-600 text-xs font-bold rounded-full">
+              {chats.length} Chats
+            </span>
+          </div>
+
+          {/* Username Search Input Box */}
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+            <input 
+              type="text" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name or @username..."
+              className="w-full pl-9 pr-4 py-2 bg-slate-100 dark:bg-slate-800/80 rounded-2xl text-xs text-slate-900 dark:text-white focus:outline-none border border-slate-200 dark:border-slate-700"
+            />
+          </div>
+        </div>
+
+        {/* Conversations List (Static Panel with Internal Overflow) */}
+        <div className="space-y-1 overflow-y-auto flex-1 mt-3 pr-1">
+          {isLoadingChats ? (
+            <div className="p-6 text-center text-xs font-bold text-slate-400 animate-pulse">
+              Loading chats...
+            </div>
+          ) : filteredChats.length === 0 ? (
+            <div className="p-6 text-center text-xs font-bold text-slate-400 space-y-2">
+              <MessageCircle className="w-8 h-8 text-slate-400 mx-auto" />
+              <p>No chats found.</p>
+              <p className="text-[10px] text-slate-500 font-medium">Follow users to start a conversation!</p>
+            </div>
+          ) : (
+            filteredChats.map((c) => (
+              <div 
+                key={c.id}
+                onClick={() => setActiveChatId(c.id)}
+                className={`p-2.5 rounded-2xl cursor-pointer transition-all flex items-center justify-between ${
+                  activeChatId === c.id 
+                    ? 'bg-blue-600 text-white shadow-md' 
+                    : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <img src={c.avatar} alt={c.name} className="w-10 h-10 rounded-full object-cover" />
+                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900"></span>
+                  </div>
+                  <div>
+                    <h4 className={`text-xs font-black truncate max-w-[120px] ${activeChatId === c.id ? 'text-white' : 'text-blue-600 dark:text-blue-400'}`}>
+                      @{c.username}
+                    </h4>
+                    <p className={`text-[11px] truncate max-w-[120px] ${activeChatId === c.id ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
+                      {c.name}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Right Conversation Window (Smooth Scrolling Chat Box) */}
+      <div className="md:col-span-2 p-3 flex flex-col h-full overflow-hidden bg-slate-50/50 dark:bg-slate-950/40 rounded-2xl relative">
+        {!activeChat ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-2.5">
+            <MessageCircle className="w-10 h-10 text-blue-500 opacity-60" />
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">No Chat Selected</h3>
+            <p className="text-xs text-slate-400 max-w-xs">
+              Select an existing chat from the left panel or follow suggested users to start a new chat.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Active Chat Header Bar (Static Top Bar) */}
+            <div className="p-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between shadow-sm flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <img src={activeChat.avatar} alt={activeChat.name} className="w-10 h-10 rounded-full object-cover" />
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    {activeChat.name}
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-medium">@{activeChat.username} • Active now</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 relative">
+                {/* Disappearing Messages Dropdown Trigger */}
+                <button 
+                  onClick={() => setIsTimerMenuOpen(!isTimerMenuOpen)}
+                  className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    disappearingTimer !== 'off' 
+                      ? 'bg-amber-500 text-white shadow-md' 
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  <Flame className="w-3.5 h-3.5" />
+                  <span>{disappearingTimer === 'off' ? 'Disappearing Off' : `Self-Destruct (${disappearingTimer})`}</span>
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+
+                {/* Timer Options Menu */}
+                {isTimerMenuOpen && (
+                  <div className="absolute right-32 top-10 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-lg p-1.5 z-30 text-xs font-semibold text-slate-700 dark:text-slate-200 space-y-1">
+                    <button 
+                      onClick={() => handleSetDisappearingTimer('off')}
+                      className={`w-full px-3 py-2 rounded-xl text-left ${disappearingTimer === 'off' ? 'bg-blue-50 dark:bg-blue-950 font-bold text-blue-600' : 'hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                    >
+                      Off (Keep Messages)
+                    </button>
+                    <button 
+                      onClick={() => handleSetDisappearingTimer('10s')}
+                      className={`w-full px-3 py-2 rounded-xl text-left ${disappearingTimer === '10s' ? 'bg-amber-50 dark:bg-amber-950 font-bold text-amber-600' : 'hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                    >
+                      🔥 10 Seconds Self-Destruct
+                    </button>
+                    <button 
+                      onClick={() => handleSetDisappearingTimer('24h')}
+                      className={`w-full px-3 py-2 rounded-xl text-left ${disappearingTimer === '24h' ? 'bg-blue-50 dark:bg-blue-950 font-bold text-blue-600' : 'hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                    >
+                      ⏱️ 24 Hours
+                    </button>
+                    <button 
+                      onClick={() => handleSetDisappearingTimer('7d')}
+                      className={`w-full px-3 py-2 rounded-xl text-left ${disappearingTimer === '7d' ? 'bg-blue-50 dark:bg-blue-950 font-bold text-blue-600' : 'hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                    >
+                      📅 7 Days
+                    </button>
+                  </div>
+                )}
+
+                <button 
+                  onClick={() => startCall(activeChat.id, activeChat.name, 'voice')}
+                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  title="Voice Call"
+                >
+                  <Phone className="w-4 h-4 text-emerald-500" />
+                </button>
+                <button 
+                  onClick={() => startCall(activeChat.id, activeChat.name, 'video')}
+                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  title="Video Call"
+                >
+                  <Video className="w-4 h-4 text-blue-500" />
+                </button>
+
+                {/* Clear Chat Button */}
+                <button 
+                  onClick={handleClearChat}
+                  className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-colors"
+                  title="Clear Chat History (Both Sides)"
+                >
+                  <Trash2 className="w-4 h-4 text-rose-500" />
+                </button>
+              </div>
+            </div>
+
+            {/* Message Discussion Feed */}
+            <div 
+              onScroll={handleChatScroll}
+              className="flex-1 overflow-y-auto py-4 space-y-3 px-2 relative scroll-smooth"
+            >
+              {isLoadingMessages ? (
+                <div className="py-6 text-center text-xs font-bold text-slate-400 animate-pulse">
+                  Loading messages...
+                </div>
+              ) : activeMessages.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-400 font-semibold space-y-1">
+                  <p className="font-bold">No messages in this chat yet 👋</p>
+                  <p>Send a message below to start chatting!</p>
+                </div>
+              ) : (
+                activeMessages.map((msg) => {
+                  const myId = String(user?._id || '');
+                  const hasViewedOnce = msg.isViewOnce && msg.viewedBy && msg.viewedBy.includes(myId);
+                  const isEditingThis = editingMsgId === msg.id;
+
+                  return (
+                    <div 
+                      key={msg.id} 
+                      className={`flex items-end gap-2 group ${msg.isMe ? 'justify-end' : 'justify-start'} animate-in fade-in duration-150 relative`}
+                    >
+                      {!msg.isMe && (
+                        <img src={msg.avatar} alt={msg.sender} className="w-7 h-7 rounded-full object-cover" />
+                      )}
+
+                      {/* 3 Dots Menu Button for Opposite / Left-Side Message */}
+                      {!msg.isMe && (
+                        <div className="relative flex items-center">
+                          <button
+                            onClick={() => setActiveMenuMsgId(activeMenuMsgId === msg.id ? null : msg.id)}
+                            className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors opacity-0 group-hover:opacity-100"
+                            title="Message Options"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+                          {activeMenuMsgId === msg.id && (
+                            <div className="absolute top-6 left-0 z-30 w-48 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg p-1.5 text-xs font-semibold space-y-1">
+                              {/* Emoji reaction bar */}
+                              <div className="flex items-center justify-around p-1.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                                {['❤️', '👍', '😂', '🔥', '😮', '😢', '🙏'].map(emoji => (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => handleReact(msg.id, emoji)}
+                                    className="text-base hover:scale-125 transition-transform"
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+                              <button
+                                onClick={() => handleDeleteForMe(msg.id)}
+                                className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-amber-500" />
+                                <span>Delete for Me</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Message Bubble Container */}
+                      <div 
+                        className={`max-w-xs sm:max-w-md p-3 rounded-2xl text-xs font-medium space-y-2 shadow-sm relative ${
+                          msg.isMe 
+                            ? 'bg-blue-600 text-white rounded-br-none' 
+                            : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-bl-none border border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        {/* DELETED FOR EVERYONE */}
+                        {msg.isDeletedForEveryone ? (
+                          <div className="flex items-center gap-1.5 text-slate-400 italic text-xs py-0.5">
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>This message was deleted</span>
+                          </div>
+                        ) : (
+                          <>
+                            {/* VIEW-ONCE MEDIA CONTENT */}
+                            {msg.isViewOnce ? (
+                              <div className="my-1">
+                                {msg.isMe ? (
+                                  // Sender cannot view sent 1x photo
+                                  <div className="flex items-center gap-2 px-3 py-2 bg-black/20 rounded-xl text-blue-100 text-xs font-semibold select-none border border-white/20">
+                                    <Lock className="w-4 h-4 text-amber-300" />
+                                    <span>1x View Once Photo Sent</span>
+                                  </div>
+                                ) : hasViewedOnce ? (
+                                  // Recipient already opened photo
+                                  <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-900/60 rounded-xl text-slate-400 text-xs font-semibold select-none border border-slate-200/50 dark:border-slate-800">
+                                    <EyeOff className="w-4 h-4 text-slate-400" />
+                                    <span>Photo • Opened</span>
+                                  </div>
+                                ) : (
+                                  // Recipient can view photo 1 time only
+                                  <button
+                                    onClick={() => setViewOnceModalMedia({ url: msg.mediaUrl, msgId: msg.id })}
+                                    className="flex items-center gap-2 px-3.5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl font-bold text-xs shadow-md transition-all animate-pulse"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                    <span>View Once Photo (1x)</span>
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              <>
+                                {/* REGULAR IMAGE MEDIA */}
+                                {msg.mediaType === 'image' && msg.mediaUrl && (
+                                  <div className="relative group rounded-xl overflow-hidden my-1">
+                                    <img 
+                                      src={msg.mediaUrl} 
+                                      alt="Attachment" 
+                                      className="w-full max-h-60 object-cover cursor-pointer rounded-xl transition-transform hover:scale-[1.01]" 
+                                      onClick={() => setPreviewImageModal(msg.mediaUrl)}
+                                    />
+                                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                                      <a 
+                                        href={msg.mediaUrl} 
+                                        download={msg.fileName || 'photo.jpg'} 
+                                        target="_blank" 
+                                        rel="noreferrer"
+                                        className="p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-lg backdrop-blur-md"
+                                        title="Download Photo"
+                                      >
+                                        <Download className="w-3.5 h-3.5" />
+                                      </a>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* VIDEO MEDIA */}
+                                {msg.mediaType === 'video' && msg.mediaUrl && (
+                                  <div className="my-1 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
+                                    <video src={msg.mediaUrl} controls className="max-w-full rounded-xl max-h-56" />
+                                  </div>
+                                )}
+
+                                {/* DOCUMENT / FILE ATTACHMENT */}
+                                {msg.mediaType === 'document' && (
+                                  <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 ${
+                                    msg.isMe ? 'bg-blue-700/40 border-blue-400/30 text-white' : 'bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-700'
+                                  }`}>
+                                    <div className="flex items-center gap-2 overflow-hidden">
+                                      <FileText className="w-5 h-5 text-blue-400 flex-shrink-0" />
+                                      <div className="truncate">
+                                        <p className="font-bold text-xs truncate">{msg.fileName || 'Attachment Document'}</p>
+                                        {msg.fileSize && (
+                                          <p className="text-[10px] opacity-75">{formatFileSize(msg.fileSize)}</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <a 
+                                      href={msg.mediaUrl} 
+                                      download={msg.fileName || 'document'} 
+                                      target="_blank" 
+                                      rel="noreferrer"
+                                      className="px-2.5 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 flex-shrink-0 transition-colors shadow-sm"
+                                    >
+                                      <Download className="w-3 h-3" />
+                                      <span>Download</span>
+                                    </a>
+                                  </div>
+                                )}
+                              </>
+                            )}
+
+                            {/* INLINE EDIT MODE OR REGULAR TEXT */}
+                            {isEditingThis ? (
+                              <div className="flex items-center gap-1 mt-1">
+                                <input
+                                  type="text"
+                                  value={editText}
+                                  onChange={e => setEditText(e.target.value)}
+                                  className="flex-1 px-2 py-1 bg-white/20 dark:bg-black/30 rounded-lg text-xs outline-none text-white placeholder-white/60"
+                                  autoFocus
+                                />
+                                <button onClick={() => handleSaveEdit(msg.id)} className="p-1 text-emerald-300 hover:text-emerald-100">
+                                  <Check className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => setEditingMsgId(null)} className="p-1 text-rose-300 hover:text-rose-100">
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ) : (
+                              msg.text && !msg.isViewOnce && (
+                                <p>
+                                  {msg.text}
+                                  {msg.isEdited && <span className="text-[9px] opacity-60 ml-1.5 font-normal">(edited)</span>}
+                                </p>
+                              )
+                            )}
+                          </>
+                        )}
+
+                        {/* EMOJI REACTIONS DISPLAY */}
+                        {msg.reactions && msg.reactions.length > 0 && (
+                          <div className="flex items-center gap-1 mt-1 flex-wrap">
+                            {msg.reactions.map((r: any, idx: number) => (
+                              <span key={idx} className="px-1.5 py-0.5 bg-black/20 text-white rounded-md text-[10px]">
+                                {r.emoji}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Self-Destruct Live Countdown Pill */}
+                        {msg.ttl !== undefined && msg.ttl !== null && (
+                          <div className="mt-1 flex items-center gap-1 text-[10px] font-bold text-amber-300 bg-black/20 px-2 py-0.5 rounded-md w-fit">
+                            <Flame className="w-3 h-3 text-amber-400 animate-pulse" />
+                            <span>Self-destructing in {msg.ttl}s</span>
+                          </div>
+                        )}
+
+                        <div className={`flex items-center justify-end gap-1 text-[9px] ${msg.isMe ? 'text-blue-100' : 'text-slate-400'}`}>
+                          <span>{msg.time}</span>
+                          {msg.isMe && <CheckCheck className="w-3 h-3 text-blue-200" />}
+                        </div>
+                      </div>
+
+                      {/* 3 Dots Menu Button for My / Right-Side Message */}
+                      {msg.isMe && (
+                        <div className="relative flex items-center">
+                          <button
+                            onClick={() => setActiveMenuMsgId(activeMenuMsgId === msg.id ? null : msg.id)}
+                            className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors opacity-0 group-hover:opacity-100"
+                            title="Message Options"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+
+                          {activeMenuMsgId === msg.id && (
+                            <div className="absolute top-6 right-0 z-30 w-48 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg p-1.5 text-xs font-semibold space-y-1 text-slate-800 dark:text-slate-200">
+                              {/* Emoji reaction bar */}
+                              <div className="flex items-center justify-around p-1.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                                {['❤️', '👍', '😂', '🔥', '😮', '😢', '🙏'].map(emoji => (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => handleReact(msg.id, emoji)}
+                                    className="text-base hover:scale-125 transition-transform"
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+
+                              {/* Edit option */}
+                              {!msg.isDeletedForEveryone && !msg.isViewOnce && (
+                                <button
+                                  onClick={() => { setEditingMsgId(msg.id); setEditText(msg.text); setActiveMenuMsgId(null); }}
+                                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-left"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5 text-blue-500" />
+                                  <span>Edit Message</span>
+                                </button>
+                              )}
+
+                              {/* Delete for Me */}
+                              <button
+                                onClick={() => handleDeleteForMe(msg.id)}
+                                className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-left"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-amber-500" />
+                                <span>Delete for Me</span>
+                              </button>
+
+                              {/* Delete for Everyone */}
+                              {!msg.isDeletedForEveryone && (
+                                <button
+                                  onClick={() => handleDeleteForEveryone(msg.id)}
+                                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-left"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                                  <span>Delete for Everyone</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+
+              {/* Scroll Anchor */}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* FLOATING SCROLL TO BOTTOM BUTTON */}
+            {showScrollBottom && (
+              <button
+                type="button"
+                onClick={() => scrollToBottom(true)}
+                className="absolute bottom-20 right-8 p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-all animate-bounce z-20 flex items-center gap-1 text-xs font-bold"
+                title="Scroll to latest message"
+              >
+                <ChevronDown className="w-4 h-4" />
+                <span className="text-[10px] pr-1">New Messages</span>
+              </button>
+            )}
+
+            {/* Dynamic Message Form Input Bar (Static Bottom Bar) */}
+            <form onSubmit={handleSendMessage} className="p-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center gap-2 shadow-sm relative flex-shrink-0">
+              <input 
+                type="file" 
+                ref={chatFileRef}
+                onChange={handleChatFileChange}
+                accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.zip"
+                className="hidden"
+              />
+
+              {/* Attach File Button */}
+              <button 
+                type="button"
+                onClick={() => chatFileRef.current?.click()}
+                disabled={isUploadingFile}
+                className="p-2 text-slate-400 hover:text-blue-600 transition-colors disabled:opacity-50"
+                title="Attach File / Document / Photo"
+              >
+                {isUploadingFile ? <RefreshCw className="w-4 h-4 animate-spin text-blue-500" /> : <Paperclip className="w-4 h-4" />}
+              </button>
+
+              {/* Camera Photo Button */}
+              <button 
+                type="button"
+                onClick={startCamera}
+                className="p-2 text-slate-400 hover:text-blue-500 transition-colors"
+                title="Take Photo with Camera"
+              >
+                <Camera className="w-4 h-4" />
+              </button>
+
+              {/* 1x View Once Toggle Button */}
+              <button
+                type="button"
+                onClick={() => setIsViewOnceSelected(!isViewOnceSelected)}
+                className={`px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1 transition-all ${
+                  isViewOnceSelected 
+                    ? 'bg-amber-500 text-white shadow-md' 
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+                }`}
+                title="Toggle 1x View Once Photo"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>1x</span>
+              </button>
+
+              {/* Voice Record Button */}
+              <button 
+                type="button"
+                onClick={handleVoiceRecordToggle}
+                className={`p-2 rounded-xl transition-all ${isRecordingVoice ? 'bg-rose-500 text-white animate-pulse' : 'text-slate-400 hover:text-emerald-500'}`}
+                title="Voice Note"
+              >
+                <Mic className="w-4 h-4" />
+              </button>
+
+              <input 
+                type="text" 
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder={
+                  isViewOnceSelected 
+                    ? 'Send 1x View Once Photo...' 
+                    : disappearingTimer !== 'off' 
+                      ? `Send disappearing message (${disappearingTimer})...` 
+                      : `Message ${activeChat.name.split(' ')[0]}...`
+                }
+                className="flex-1 px-3 py-2 bg-transparent text-xs text-slate-900 dark:text-white focus:outline-none"
+              />
+
+              <button 
+                type="submit" 
+                disabled={isUploadingFile}
+                className="py-2 px-4 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1 hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Send</span>
+              </button>
+            </form>
+          </>
+        )}
+      </div>
+
+      {/* CAMERA SNAPSHOT MODAL */}
+      {isCameraOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 text-white rounded-2xl border border-slate-800 max-w-lg w-full p-4 space-y-4 shadow-xl relative">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <Camera className="w-4 h-4 text-blue-400" />
+                <span>Camera Snap</span>
+              </h3>
+              <button onClick={stopCamera} className="p-1 rounded-full bg-slate-800 text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="relative rounded-2xl overflow-hidden bg-black aspect-video flex items-center justify-center border border-slate-800">
+              {!capturedPhoto ? (
+                <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+              ) : (
+                <img src={capturedPhoto} alt="Captured preview" className="w-full h-full object-cover" />
+              )}
+              <canvas ref={canvasRef} className="hidden" />
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              {!capturedPhoto ? (
+                <div className="w-full flex items-center justify-center">
+                  <button 
+                    onClick={takePhoto}
+                    className="w-16 h-16 rounded-full border-4 border-white bg-red-600 hover:bg-red-700 transition-transform active:scale-95 shadow-lg"
+                    title="Take Photo"
+                  />
+                </div>
+              ) : (
+                <div className="w-full flex items-center justify-between gap-3">
+                  <button 
+                    onClick={() => setCapturedPhoto(null)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    <span>Retake</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsViewOnceSelected(!isViewOnceSelected)}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                      isViewOnceSelected 
+                        ? 'bg-amber-500 text-white shadow-md' 
+                        : 'bg-slate-800 text-slate-300'
+                    }`}
+                  >
+                    <Eye className="w-4 h-4" />
+                    <span>{isViewOnceSelected ? '1x View Once (ON)' : '1x View Once'}</span>
+                  </button>
+
+                  <button 
+                    onClick={sendCameraPhoto}
+                    disabled={isUploadingFile}
+                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 rounded-xl text-xs font-bold text-white shadow-lg flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>{isUploadingFile ? 'Sending...' : 'Send Photo'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REGULAR IMAGE PREVIEW LIGHTBOX MODAL */}
+      {previewImageModal && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="relative max-w-4xl w-full flex flex-col items-center space-y-3">
+            <div className="w-full flex items-center justify-between text-white">
+              <span className="text-xs font-bold">Photo Preview</span>
+              <div className="flex items-center gap-3">
+                <a 
+                  href={previewImageModal} 
+                  download="photo.jpg" 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-xl text-xs font-bold flex items-center gap-1.5 text-white shadow-md"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download</span>
+                </a>
+                <button 
+                  onClick={() => setPreviewImageModal(null)} 
+                  className="p-1.5 rounded-full bg-slate-800 text-slate-300 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <img src={previewImageModal} alt="Enlarged preview" className="max-h-[80vh] w-auto object-contain rounded-2xl shadow-2xl border border-slate-800" />
+          </div>
+        </div>
+      )}
+
+      {/* 1x VIEW ONCE LIGHTBOX MODAL */}
+      {viewOnceModalMedia && (
+        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4">
+          <div className="relative max-w-3xl w-full flex flex-col items-center space-y-4">
+            <div className="w-full flex items-center justify-between text-white px-2">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 bg-amber-500/20 text-amber-400 border border-amber-500/40 rounded-full text-xs font-bold flex items-center gap-1">
+                  <Flame className="w-3.5 h-3.5 text-amber-400" />
+                  <span>1x View Once Photo</span>
+                </span>
+              </div>
+              <button 
+                onClick={closeViewOnceModal}
+                className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-lg"
+              >
+                <X className="w-4 h-4" />
+                <span>Close & Destroy</span>
+              </button>
+            </div>
+            <img 
+              src={viewOnceModalMedia.url} 
+              alt="View once photo" 
+              className="max-h-[75vh] w-auto object-contain rounded-2xl shadow-2xl border border-slate-800 select-none" 
+              onContextMenu={e => e.preventDefault()}
+            />
+            <p className="text-slate-400 text-xs font-semibold">⚠️ This photo will be closed permanently once you click Close.</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+

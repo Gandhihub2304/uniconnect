@@ -11,6 +11,7 @@ export interface IChatDocument extends Document {
   isSecret?: boolean;
   isPinned?: boolean;
   disappearingTimer?: string;
+  wallpaper?: string;
 }
 
 const ChatSchema = new Schema<IChatDocument>(
@@ -25,6 +26,7 @@ const ChatSchema = new Schema<IChatDocument>(
     isSecret: { type: Boolean, default: false },
     isPinned: { type: Boolean, default: false },
     disappearingTimer: { type: String, default: 'off' },
+    wallpaper: { type: String, default: 'default' },
   },
   { timestamps: true }
 );

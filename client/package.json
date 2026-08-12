@@ -11,6 +11,7 @@
   "dependencies": {
     "@capacitor/android": "^8.5.0",
     "@capacitor/core": "^8.5.0",
+    "@capacitor/haptics": "^8.0.2",
     "@capacitor/push-notifications": "^8.1.2",
     "clsx": "^2.1.0",
     "framer-motion": "^11.1.7",

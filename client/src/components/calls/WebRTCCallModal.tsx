@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { PhoneOff, Phone, Mic, MicOff, Video, VideoOff, Monitor, Captions, ShieldCheck } from 'lucide-react';
+import { PhoneOff, Phone, Mic, MicOff, Video, VideoOff, Monitor, Captions, ShieldCheck, RefreshCw } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { onSocket, offSocket, getSocket } from '@/lib/socket';
+import { startIncomingRingtone, startOutgoingRingtone, stopRingtone } from '@/lib/ringtone';
 
 const ICE_SERVERS: RTCConfiguration = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
@@ -22,6 +23,7 @@ export const WebRTCCallModal: React.FC = () => {
   const [callDuration, setCallDuration] = useState(0);
   const [isRemoteConnected, setIsRemoteConnected] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
+  const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('user');
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -44,6 +46,7 @@ export const WebRTCCallModal: React.FC = () => {
   };
 
   const cleanupCall = () => {
+    stopRingtone();
     pcRef.current?.close();
     pcRef.current = null;
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -81,9 +84,11 @@ export const WebRTCCallModal: React.FC = () => {
         return;
       }
       setIncomingCall({ fromId: data.from, fromName: data.name, offer: data.signal, callType: data.callType || 'video' });
+      startIncomingRingtone();
     };
 
     const onAccepted = async (answer: any) => {
+      stopRingtone();
       if (pcRef.current && answer) {
         try {
           await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
@@ -149,6 +154,7 @@ export const WebRTCCallModal: React.FC = () => {
           name: user.name,
           callType,
         });
+        if (!cancelled) startOutgoingRingtone();
       } catch (err) {
         console.warn('Could not start call (camera/mic unavailable):', err);
         if (!cancelled) setMediaError(describeMediaError(err));
@@ -157,6 +163,7 @@ export const WebRTCCallModal: React.FC = () => {
 
     return () => {
       cancelled = true;
+      stopRingtone();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCallModalOpen, callRole]);
@@ -175,6 +182,7 @@ export const WebRTCCallModal: React.FC = () => {
     if (!incomingCall || !user) return;
     const { fromId, offer } = incomingCall;
 
+    stopRingtone();
     setMediaError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: incomingCall.callType === 'video', audio: true });
@@ -203,6 +211,7 @@ export const WebRTCCallModal: React.FC = () => {
 
   const handleDeclineIncoming = () => {
     if (incomingCall) getSocket()?.emit('end_call', { to: incomingCall.fromId });
+    stopRingtone();
     setIncomingCall(null);
   };
 
@@ -220,6 +229,36 @@ export const WebRTCCallModal: React.FC = () => {
   const toggleVideo = () => {
     localStreamRef.current?.getVideoTracks().forEach((track) => { track.enabled = isVideoOff; });
     setIsVideoOff(!isVideoOff);
+  };
+
+  const switchCamera = async () => {
+    if (isScreenSharing || callType !== 'video') return;
+    const nextFacingMode = cameraFacingMode === 'user' ? 'environment' : 'user';
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: nextFacingMode } },
+        audio: false,
+      });
+      const newTrack = newStream.getVideoTracks()[0];
+      if (!newTrack) return;
+
+      const sender = pcRef.current?.getSenders().find((s) => s.track?.kind === 'video');
+      await sender?.replaceTrack(newTrack);
+
+      // Swap the video track on the local stream in place so mute/toggle state stays consistent
+      const oldTrack = localStreamRef.current?.getVideoTracks()[0];
+      if (oldTrack) {
+        oldTrack.stop();
+        localStreamRef.current?.removeTrack(oldTrack);
+      }
+      localStreamRef.current?.addTrack(newTrack);
+      cameraTrackRef.current = newTrack;
+
+      if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current;
+      setCameraFacingMode(nextFacingMode);
+    } catch (err) {
+      console.warn('Could not switch camera:', err);
+    }
   };
 
   const toggleScreenShare = async () => {
@@ -363,6 +402,17 @@ export const WebRTCCallModal: React.FC = () => {
           >
             {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
           </button>
+
+          {callType === 'video' && (
+            <button
+              onClick={switchCamera}
+              disabled={isScreenSharing || isVideoOff}
+              className="p-3.5 rounded-2xl bg-slate-800 text-slate-200 hover:bg-slate-700 transition-all disabled:opacity-40"
+              title="Switch Camera"
+            >
+              <RefreshCw className="w-5 h-5" />
+            </button>
+          )}
 
           <button
             onClick={toggleScreenShare}

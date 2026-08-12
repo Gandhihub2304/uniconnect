@@ -118,6 +118,27 @@ router.put('/:chatId/disappearing', authMiddleware, async (req: AuthRequest, res
   }
 });
 
+// Update per-chat wallpaper/theme (visible to both participants)
+router.put('/:chatId/wallpaper', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const { wallpaper } = req.body;
+    const chat = await ChatModel.findByIdAndUpdate(req.params.chatId, { wallpaper }, { new: true });
+    if (!chat) return res.status(404).json({ success: false, message: 'Chat not found' });
+
+    const io = getIO();
+    if (io) {
+      io.to(`chat_${chat._id}`).emit('wallpaper_updated', {
+        chatId: chat._id.toString(),
+        wallpaper,
+      });
+    }
+
+    res.json({ success: true, chat });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message || 'Error updating wallpaper' });
+  }
+});
+
 // Clear entire chat history for both users
 router.delete('/:chatId/clear', authMiddleware, async (req: AuthRequest, res) => {
   try {

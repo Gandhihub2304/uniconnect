@@ -29,13 +29,27 @@ import {
   Smile,
   Check,
   Reply,
-  CornerUpLeft
+  CornerUpLeft,
+  Palette,
+  ArrowLeft
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { apiGet, apiPost, apiPut, apiDelete, apiUpload } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 
 type DisappearingTimer = 'off' | '10s' | '24h' | '7d';
+
+// Instagram-style chat wallpapers: a neutral default plus a handful of solid/gradient themes.
+const CHAT_WALLPAPERS: Record<string, { label: string; swatch: string; bg: string }> = {
+  default: { label: 'Default', swatch: '#F0F2F5', bg: '' },
+  midnight: { label: 'Midnight', swatch: '#0F172A', bg: 'linear-gradient(180deg, #0F172A, #1E293B)' },
+  ocean: { label: 'Ocean', swatch: '#0EA5E9', bg: 'linear-gradient(180deg, #0EA5E9, #38BDF8)' },
+  sunset: { label: 'Sunset', swatch: '#F97316', bg: 'linear-gradient(180deg, #F97316, #EC4899)' },
+  forest: { label: 'Forest', swatch: '#16A34A', bg: 'linear-gradient(180deg, #16A34A, #4ADE80)' },
+  grape: { label: 'Grape', swatch: '#7C3AED', bg: 'linear-gradient(180deg, #7C3AED, #A78BFA)' },
+  rose: { label: 'Rose', swatch: '#E11D48', bg: 'linear-gradient(180deg, #E11D48, #FB7185)' },
+  classic: { label: 'Instagram', swatch: '#833AB4', bg: 'linear-gradient(135deg, #833AB4, #E1306C, #F77737)' },
+};
 
 export const ChatView: React.FC = () => {
   const { startCall, user, pendingChatUserId, clearPendingChatUser } = useAppStore();
@@ -45,6 +59,8 @@ export const ChatView: React.FC = () => {
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [disappearingTimer, setDisappearingTimer] = useState<DisappearingTimer>('off');
   const [isTimerMenuOpen, setIsTimerMenuOpen] = useState(false);
+  const [isWallpaperMenuOpen, setIsWallpaperMenuOpen] = useState(false);
+  const [chatWallpaper, setChatWallpaper] = useState<string>('default');
   const chatFileRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
@@ -57,6 +73,7 @@ export const ChatView: React.FC = () => {
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('environment');
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -103,6 +120,7 @@ export const ChatView: React.FC = () => {
           lastMessage: c.lastMessage || '',
           lastMessageTime: c.lastMessageTime,
           unread: c.unread || 0,
+          wallpaper: c.wallpaper || 'default',
           isFriend: true
         }));
         setChats(formattedChats);
@@ -130,6 +148,24 @@ export const ChatView: React.FC = () => {
   useEffect(() => {
     fetchChats();
   }, [user?._id]);
+
+  // Keep the wallpaper picker in sync with whichever chat is active
+  useEffect(() => {
+    setChatWallpaper(activeChat?.wallpaper || 'default');
+    setIsWallpaperMenuOpen(false);
+  }, [activeChatId, activeChat?.wallpaper]);
+
+  const handleSetWallpaper = async (wallpaperId: string) => {
+    setChatWallpaper(wallpaperId);
+    setIsWallpaperMenuOpen(false);
+    if (!activeChatId) return;
+    setChats(prev => prev.map(c => c.id === activeChatId ? { ...c, wallpaper: wallpaperId } : c));
+    try {
+      await apiPut(`/api/chats/${activeChatId}/wallpaper`, { wallpaper: wallpaperId });
+    } catch (err) {
+      console.error('Failed to update wallpaper:', err);
+    }
+  };
 
   // If navigated here via "Message" from a suggestion/search result, open (or create) that 1:1 chat
   useEffect(() => {
@@ -323,6 +359,11 @@ export const ChatView: React.FC = () => {
       setMessages(prev => ({ ...prev, [data.chatId]: [] }));
     };
 
+    const handleWallpaperUpdated = (data: { chatId: string; wallpaper: string }) => {
+      if (data.chatId === activeChatId) setChatWallpaper(data.wallpaper);
+      setChats(prev => prev.map(c => c.id === data.chatId ? { ...c, wallpaper: data.wallpaper } : c));
+    };
+
     const handleMessagesRead = (data: { chatId: string; readerId: string }) => {
       if (data.chatId !== activeChatId) return;
       setMessages(prev => {
@@ -358,6 +399,7 @@ export const ChatView: React.FC = () => {
     socket.on('chat_cleared', handleChatCleared);
     socket.on('messages_read', handleMessagesRead);
     socket.on('user_typing', handleUserTyping);
+    socket.on('wallpaper_updated', handleWallpaperUpdated);
 
     return () => {
       socket.emit('leave_chat', activeChatId);
@@ -370,6 +412,7 @@ export const ChatView: React.FC = () => {
       socket.off('chat_cleared', handleChatCleared);
       socket.off('messages_read', handleMessagesRead);
       socket.off('user_typing', handleUserTyping);
+      socket.off('wallpaper_updated', handleWallpaperUpdated);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     };
   }, [activeChatId, user?._id]);
@@ -579,14 +622,15 @@ export const ChatView: React.FC = () => {
   };
 
   // Camera Functions
-  const startCamera = async () => {
+  const startCamera = async (facingMode: 'user' | 'environment' = cameraFacingMode) => {
     setCapturedPhoto(null);
     setIsCameraOpen(true);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
+        video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } }
       });
       setCameraStream(stream);
+      setCameraFacingMode(facingMode);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
@@ -595,6 +639,14 @@ export const ChatView: React.FC = () => {
       alert('Unable to access camera. Please check camera permissions.');
       setIsCameraOpen(false);
     }
+  };
+
+  const flipCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+    startCamera(cameraFacingMode === 'environment' ? 'user' : 'environment');
   };
 
   const stopCamera = () => {
@@ -615,6 +667,11 @@ export const ChatView: React.FC = () => {
 
     const ctx = canvas.getContext('2d');
     if (ctx) {
+      // Undo the front-camera preview mirror so the saved photo reads correctly (not flipped)
+      if (cameraFacingMode === 'user') {
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+      }
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
       setCapturedPhoto(dataUrl);
@@ -898,31 +955,28 @@ export const ChatView: React.FC = () => {
   return (
     <div className="h-[calc(100vh-9.5rem)] md:h-[calc(100vh-6.5rem)] grid grid-cols-1 md:grid-cols-3 gap-0 md:gap-4 bg-white dark:bg-slate-900 rounded-none md:rounded-2xl border-0 md:border border-slate-200 dark:border-slate-800 shadow-sm p-0 md:p-2 overflow-hidden select-none relative -m-2.5 sm:-m-4 md:m-0">
       {/* Left Chat List Column — full-screen on mobile until a chat is opened, always visible on md+ */}
-      <div className={`${activeChatId ? 'hidden md:flex' : 'flex'} md:col-span-1 border-r border-slate-200 dark:border-slate-800 p-3 flex-col h-full overflow-hidden`}>
+      <div className={`${activeChatId ? 'hidden md:flex' : 'flex'} md:col-span-1 border-r border-slate-200 dark:border-slate-800 p-3 flex-col h-full overflow-hidden bg-white dark:bg-slate-900`}>
         {/* Header & Search Bar (Fixed Top) */}
         <div className="space-y-3 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-black text-slate-900 dark:text-white">Messages</h2>
-            <span className="px-2.5 py-0.5 bg-blue-100 dark:bg-blue-950 text-blue-600 text-xs font-bold rounded-full">
-              {chats.length} Chats
-            </span>
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">{user?.username || 'Messages'}</h2>
           </div>
 
-          {/* Username Search Input Box */}
+          {/* Search Pill — Instagram style */}
           <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-            <input 
-              type="text" 
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by name or @username..."
-              className="w-full pl-9 pr-4 py-2 bg-slate-100 dark:bg-slate-800/80 rounded-2xl text-xs text-slate-900 dark:text-white focus:outline-none border border-slate-200 dark:border-slate-700"
+              placeholder="Search"
+              className="w-full pl-9 pr-4 py-2.5 bg-slate-100 dark:bg-slate-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-500 focus:outline-none"
             />
           </div>
         </div>
 
         {/* Conversations List (Static Panel with Internal Overflow) */}
-        <div className="space-y-1 overflow-y-auto flex-1 mt-3 pr-1">
+        <div className="overflow-y-auto flex-1 mt-2 -mx-1">
           {isLoadingChats ? (
             <div className="p-6 text-center text-xs font-bold text-slate-400 animate-pulse">
               Loading chats...
@@ -941,40 +995,32 @@ export const ChatView: React.FC = () => {
                 <div
                   key={c.id}
                   onClick={() => setActiveChatId(c.id)}
-                  className={`p-2.5 rounded-2xl cursor-pointer transition-all flex items-center justify-between gap-2 ${
+                  className={`px-2 py-2 mx-1 rounded-xl cursor-pointer transition-colors flex items-center justify-between gap-2 ${
                     activeChatId === c.id
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
+                      ? 'bg-slate-100 dark:bg-slate-800'
+                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="relative flex-shrink-0">
-                      <img src={c.avatar} alt={c.name} className="w-10 h-10 rounded-full object-cover" />
+                      <img src={c.avatar} alt={c.name} className="w-14 h-14 rounded-full object-cover" />
                       {isOnline && (
-                        <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900"></span>
+                        <span className="absolute bottom-0.5 right-0.5 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900"></span>
                       )}
                     </div>
                     <div className="min-w-0">
-                      <h4 className={`text-xs truncate max-w-[130px] ${hasUnread ? 'font-black' : 'font-bold'} ${activeChatId === c.id ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                      <h4 className={`text-sm truncate max-w-[140px] ${hasUnread ? 'font-bold text-slate-900 dark:text-white' : 'font-medium text-slate-900 dark:text-white'}`}>
                         {c.name}
                       </h4>
-                      <p className={`text-[11px] truncate max-w-[150px] ${hasUnread ? 'font-bold' : 'font-medium'} ${activeChatId === c.id ? 'text-blue-100' : hasUnread ? 'text-slate-800 dark:text-slate-100' : 'text-slate-500 dark:text-slate-400'}`}>
-                        {c.lastMessage || `@${c.username}`}
+                      <p className={`text-[13px] truncate max-w-[160px] ${hasUnread ? 'font-semibold text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>
+                        {c.lastMessage ? c.lastMessage : `@${c.username}`}
+                        {c.lastMessageTime && <span className="text-slate-400"> · {formatRelativeTime(c.lastMessageTime)}</span>}
                       </p>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                    {c.lastMessageTime && (
-                      <span className={`text-[9px] font-semibold ${activeChatId === c.id ? 'text-blue-100' : 'text-slate-400'}`}>
-                        {formatRelativeTime(c.lastMessageTime)}
-                      </span>
-                    )}
-                    {hasUnread && (
-                      <span className="w-4 h-4 flex items-center justify-center bg-blue-600 text-white text-[9px] font-bold rounded-full">
-                        {c.unread > 9 ? '9+' : c.unread}
-                      </span>
-                    )}
-                  </div>
+                  {hasUnread && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#0095F6] shrink-0"></span>
+                  )}
                 </div>
               );
             })
@@ -994,31 +1040,29 @@ export const ChatView: React.FC = () => {
           </div>
         ) : (
           <>
-            {/* Active Chat Header Bar (Static Top Bar) */}
-            <div className="p-2.5 md:p-3 bg-white dark:bg-slate-900 rounded-none md:rounded-2xl border-0 md:border border-slate-200 dark:border-slate-800 flex items-center justify-between shadow-sm flex-shrink-0">
+            {/* Active Chat Header Bar (Static Top Bar) — Instagram style */}
+            <div className="px-2 py-2.5 md:px-3 bg-white dark:bg-slate-900 rounded-none md:rounded-2xl border-0 md:border border-slate-200 dark:border-slate-800 flex items-center justify-between shadow-sm flex-shrink-0">
               <div className="flex items-center gap-2 md:gap-3 min-w-0">
                 <button
                   onClick={() => setActiveChatId(null)}
-                  className="md:hidden p-1.5 -ml-1 rounded-full text-slate-600 dark:text-slate-300 active:bg-slate-100 dark:active:bg-slate-800 shrink-0"
+                  className="md:hidden p-1.5 -ml-1 rounded-full text-slate-900 dark:text-white active:bg-slate-100 dark:active:bg-slate-800 shrink-0"
                   aria-label="Back to chats"
                 >
-                  <ChevronDown className="w-5 h-5 rotate-90" />
+                  <ArrowLeft className="w-5 h-5" />
                 </button>
                 <div className="relative shrink-0">
-                  <img src={activeChat.avatar} alt={activeChat.name} className="w-10 h-10 rounded-full object-cover" />
+                  <img src={activeChat.avatar} alt={activeChat.name} className="w-9 h-9 rounded-full object-cover" />
                   {(activeChat.otherUserId ? onlineUserIds.has(activeChat.otherUserId) : activeChat.isOnline) && (
                     <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900"></span>
                   )}
                 </div>
                 <div className="min-w-0">
-                  <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5 truncate">
-                    {activeChat.name}
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                    {activeChat.username}
                   </h3>
-                  <p className="text-[10px] text-slate-400 font-medium truncate">
-                    @{activeChat.username} •{' '}
+                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                     {typingUserName ? (
-                      <span className="text-blue-500 font-bold">typing...</span>
+                      <span className="text-[#0095F6] font-medium">typing...</span>
                     ) : (activeChat.otherUserId ? onlineUserIds.has(activeChat.otherUserId) : activeChat.isOnline) ? (
                       'Active now'
                     ) : activeChat.lastSeen ? (
@@ -1030,82 +1074,115 @@ export const ChatView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-1 sm:gap-2 relative shrink-0">
+              <div className="flex items-center gap-0.5 sm:gap-1 relative shrink-0">
+                <button
+                  onClick={() => startCall(activeChat.id, activeChat.name, 'voice')}
+                  className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-full text-slate-900 dark:text-white active:bg-slate-100 dark:active:bg-slate-800 transition-colors"
+                  title="Voice Call"
+                >
+                  <Phone className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => startCall(activeChat.id, activeChat.name, 'video')}
+                  className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-full text-slate-900 dark:text-white active:bg-slate-100 dark:active:bg-slate-800 transition-colors"
+                  title="Video Call"
+                >
+                  <Video className="w-5 h-5" />
+                </button>
+
+                {/* Chat Wallpaper Picker Trigger */}
+                <button
+                  onClick={() => { setIsWallpaperMenuOpen(!isWallpaperMenuOpen); setIsTimerMenuOpen(false); }}
+                  className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-full text-slate-900 dark:text-white active:bg-slate-100 dark:active:bg-slate-800 transition-colors"
+                  title="Chat Theme"
+                >
+                  <Palette className="w-5 h-5" />
+                </button>
+
                 {/* Disappearing Messages Dropdown Trigger */}
                 <button
-                  onClick={() => setIsTimerMenuOpen(!isTimerMenuOpen)}
-                  className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                    disappearingTimer !== 'off'
-                      ? 'bg-amber-500 text-white shadow-md'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                  }`}
+                  onClick={() => { setIsTimerMenuOpen(!isTimerMenuOpen); setIsWallpaperMenuOpen(false); }}
+                  className={`p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-full transition-colors ${
+                    disappearingTimer !== 'off' ? 'text-amber-500' : 'text-slate-900 dark:text-white'
+                  } active:bg-slate-100 dark:active:bg-slate-800`}
                   title={disappearingTimer === 'off' ? 'Disappearing Off' : `Self-Destruct (${disappearingTimer})`}
                 >
-                  <Flame className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{disappearingTimer === 'off' ? 'Disappearing Off' : `Self-Destruct (${disappearingTimer})`}</span>
-                  <ChevronDown className="w-3 h-3" />
+                  <Flame className="w-5 h-5" />
                 </button>
 
                 {/* Timer Options Menu */}
                 {isTimerMenuOpen && (
-                  <div className="absolute right-0 top-10 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-lg p-1.5 z-30 text-xs font-semibold text-slate-700 dark:text-slate-200 space-y-1">
-                    <button 
+                  <div className="absolute right-0 top-11 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-lg p-1.5 z-30 text-xs font-semibold text-slate-700 dark:text-slate-200 space-y-1">
+                    <button
                       onClick={() => handleSetDisappearingTimer('off')}
                       className={`w-full px-3 py-2 rounded-xl text-left ${disappearingTimer === 'off' ? 'bg-blue-50 dark:bg-blue-950 font-bold text-blue-600' : 'hover:bg-slate-100 dark:hover:bg-slate-700'}`}
                     >
                       Off (Keep Messages)
                     </button>
-                    <button 
+                    <button
                       onClick={() => handleSetDisappearingTimer('10s')}
                       className={`w-full px-3 py-2 rounded-xl text-left ${disappearingTimer === '10s' ? 'bg-amber-50 dark:bg-amber-950 font-bold text-amber-600' : 'hover:bg-slate-100 dark:hover:bg-slate-700'}`}
                     >
                       🔥 10 Seconds Self-Destruct
                     </button>
-                    <button 
+                    <button
                       onClick={() => handleSetDisappearingTimer('24h')}
                       className={`w-full px-3 py-2 rounded-xl text-left ${disappearingTimer === '24h' ? 'bg-blue-50 dark:bg-blue-950 font-bold text-blue-600' : 'hover:bg-slate-100 dark:hover:bg-slate-700'}`}
                     >
                       ⏱️ 24 Hours
                     </button>
-                    <button 
+                    <button
                       onClick={() => handleSetDisappearingTimer('7d')}
                       className={`w-full px-3 py-2 rounded-xl text-left ${disappearingTimer === '7d' ? 'bg-blue-50 dark:bg-blue-950 font-bold text-blue-600' : 'hover:bg-slate-100 dark:hover:bg-slate-700'}`}
                     >
                       📅 7 Days
                     </button>
+                    <div className="border-t border-slate-200 dark:border-slate-700 my-1" />
+                    <button
+                      onClick={handleClearChat}
+                      className="w-full px-3 py-2 rounded-xl text-left text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-2"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Clear Chat History</span>
+                    </button>
                   </div>
                 )}
 
-                <button
-                  onClick={() => startCall(activeChat.id, activeChat.name, 'voice')}
-                  className="p-2 sm:p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 active:bg-slate-200 dark:active:bg-slate-700 transition-colors"
-                  title="Voice Call"
-                >
-                  <Phone className="w-4 h-4 text-emerald-500" />
-                </button>
-                <button
-                  onClick={() => startCall(activeChat.id, activeChat.name, 'video')}
-                  className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 active:bg-slate-200 dark:active:bg-slate-700 transition-colors"
-                  title="Video Call"
-                >
-                  <Video className="w-4 h-4 text-blue-500" />
-                </button>
-
-                {/* Clear Chat Button */}
-                <button
-                  onClick={handleClearChat}
-                  className="hidden sm:flex p-2 min-w-[36px] min-h-[36px] items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 active:bg-rose-100 dark:active:bg-rose-900/60 transition-colors"
-                  title="Clear Chat History (Both Sides)"
-                >
-                  <Trash2 className="w-4 h-4 text-rose-500" />
-                </button>
+                {/* Wallpaper Picker Menu */}
+                {isWallpaperMenuOpen && (
+                  <div className="absolute right-0 top-11 w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-lg p-3 z-30">
+                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 px-0.5">Chat Theme</p>
+                    <div className="grid grid-cols-4 gap-2.5">
+                      {Object.entries(CHAT_WALLPAPERS).map(([id, wp]) => (
+                        <button
+                          key={id}
+                          onClick={() => handleSetWallpaper(id)}
+                          className="flex flex-col items-center gap-1"
+                          title={wp.label}
+                        >
+                          <span
+                            className={`w-9 h-9 rounded-full border-2 ${chatWallpaper === id ? 'border-[#0095F6]' : 'border-slate-200 dark:border-slate-700'} flex items-center justify-center`}
+                            style={{ background: wp.bg || wp.swatch }}
+                          >
+                            {chatWallpaper === id && <Check className="w-4 h-4 text-white drop-shadow" />}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Message Discussion Feed */}
-            <div 
+            {/* Message Discussion Feed — background reflects the selected chat wallpaper */}
+            <div
               onScroll={handleChatScroll}
-              className="flex-1 overflow-y-auto py-4 space-y-3 px-2 relative scroll-smooth"
+              className="flex-1 overflow-y-auto py-4 space-y-1 px-2 relative scroll-smooth"
+              style={
+                chatWallpaper !== 'default' && CHAT_WALLPAPERS[chatWallpaper]?.bg
+                  ? { background: CHAT_WALLPAPERS[chatWallpaper].bg }
+                  : undefined
+              }
             >
               {isLoadingMessages ? (
                 <div className="py-6 text-center text-xs font-bold text-slate-400 animate-pulse">
@@ -1126,12 +1203,12 @@ export const ChatView: React.FC = () => {
                   const isSeen = msg.isMe && (msg.readBy || []).length > 0;
 
                   return (
-                    <div 
-                      key={msg.id} 
-                      className={`flex items-end gap-2 group ${msg.isMe ? 'justify-end' : 'justify-start'} animate-in fade-in duration-150 relative`}
+                    <div
+                      key={msg.id}
+                      className={`flex items-end gap-2 group ${msg.isMe ? 'justify-end' : 'justify-start'} animate-in fade-in duration-150 relative py-0.5`}
                     >
                       {!msg.isMe && (
-                        <img src={msg.avatar} alt={msg.sender} className="w-7 h-7 rounded-full object-cover" />
+                        <img src={msg.avatar} alt={msg.sender} className="w-6 h-6 rounded-full object-cover mb-0.5" />
                       )}
 
                       {/* 3 Dots Menu Button for Opposite / Left-Side Message */}
@@ -1177,12 +1254,12 @@ export const ChatView: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Message Bubble Container */}
-                      <div 
-                        className={`max-w-xs sm:max-w-md p-3 rounded-2xl text-xs font-medium space-y-2 shadow-sm relative ${
-                          msg.isMe 
-                            ? 'bg-blue-600 text-white rounded-br-none' 
-                            : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-bl-none border border-slate-200 dark:border-slate-700'
+                      {/* Message Bubble Container — Instagram-style fully-rounded pill */}
+                      <div
+                        className={`max-w-[75%] sm:max-w-md px-3.5 py-2 rounded-3xl text-sm space-y-1.5 relative ${
+                          msg.isMe
+                            ? 'bg-[#0095F6] text-white'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
                         }`}
                       >
                         {/* QUOTED REPLY BLOCK */}
@@ -1461,8 +1538,8 @@ export const ChatView: React.FC = () => {
               </div>
             )}
 
-            {/* Dynamic Message Form Input Bar (Static Bottom Bar) */}
-            <form onSubmit={handleSendMessage} className="p-1.5 sm:p-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center gap-0.5 sm:gap-2 shadow-sm relative flex-shrink-0">
+            {/* Dynamic Message Form Input Bar — Instagram pill style */}
+            <form onSubmit={handleSendMessage} className="px-1 py-1.5 flex items-center gap-1.5 relative flex-shrink-0">
               <input
                 type="file"
                 ref={chatFileRef}
@@ -1471,74 +1548,76 @@ export const ChatView: React.FC = () => {
                 className="hidden"
               />
 
-              {/* Attach File Button */}
-              <button
-                type="button"
-                onClick={() => chatFileRef.current?.click()}
-                disabled={isUploadingFile}
-                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-blue-600 active:text-blue-600 transition-colors disabled:opacity-50"
-                title="Attach File / Document / Photo"
-              >
-                {isUploadingFile ? <RefreshCw className="w-4 h-4 animate-spin text-blue-500" /> : <Paperclip className="w-4 h-4" />}
-              </button>
-
               {/* Camera Photo Button */}
               <button
                 type="button"
-                onClick={startCamera}
-                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-blue-500 active:text-blue-500 transition-colors"
+                onClick={() => startCamera()}
+                className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-full text-slate-900 dark:text-white active:bg-slate-100 dark:active:bg-slate-800 transition-colors shrink-0"
                 title="Take Photo with Camera"
               >
-                <Camera className="w-4 h-4" />
+                <Camera className="w-6 h-6" />
               </button>
 
-              {/* 1x View Once Toggle Button */}
-              <button
-                type="button"
-                onClick={() => setIsViewOnceSelected(!isViewOnceSelected)}
-                className={`hidden xs:flex px-2 sm:px-2.5 py-1 min-h-[36px] rounded-xl text-xs font-bold items-center gap-1 transition-all ${
-                  isViewOnceSelected
-                    ? 'bg-amber-500 text-white shadow-md'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
-                }`}
-                title="Toggle 1x View Once Photo"
-              >
-                <Eye className="w-3.5 h-3.5" />
-                <span>1x</span>
-              </button>
+              {/* Rounded input pill */}
+              <div className="flex-1 min-w-0 flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-full pl-3.5 pr-1 py-1">
+                <input
+                  type="text"
+                  value={inputText}
+                  onChange={handleInputChange}
+                  placeholder={
+                    isViewOnceSelected
+                      ? 'Send 1x View Once Photo...'
+                      : disappearingTimer !== 'off'
+                        ? `Send disappearing message (${disappearingTimer})...`
+                        : `Message...`
+                  }
+                  className="flex-1 min-w-0 bg-transparent text-sm text-slate-900 dark:text-white placeholder:text-slate-500 focus:outline-none py-1.5"
+                />
 
-              {/* Voice Record Button */}
-              <button
-                type="button"
-                onClick={handleVoiceRecordToggle}
-                className={`p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-xl transition-all ${isRecordingVoice ? 'bg-rose-500 text-white animate-pulse' : 'text-slate-400 hover:text-emerald-500 active:text-emerald-500'}`}
-                title="Voice Note"
-              >
-                <Mic className="w-4 h-4" />
-              </button>
+                {/* Attach File Button */}
+                <button
+                  type="button"
+                  onClick={() => chatFileRef.current?.click()}
+                  disabled={isUploadingFile}
+                  className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center text-slate-900 dark:text-white active:opacity-60 transition-opacity disabled:opacity-50 shrink-0"
+                  title="Attach File / Document / Photo"
+                >
+                  {isUploadingFile ? <RefreshCw className="w-5 h-5 animate-spin text-blue-500" /> : <Paperclip className="w-5 h-5" />}
+                </button>
 
-              <input
-                type="text"
-                value={inputText}
-                onChange={handleInputChange}
-                placeholder={
-                  isViewOnceSelected 
-                    ? 'Send 1x View Once Photo...' 
-                    : disappearingTimer !== 'off' 
-                      ? `Send disappearing message (${disappearingTimer})...` 
-                      : `Message ${activeChat.name.split(' ')[0]}...`
-                }
-                className="flex-1 min-w-0 px-2 sm:px-3 py-2.5 sm:py-2 bg-transparent text-sm sm:text-xs text-slate-900 dark:text-white focus:outline-none"
-              />
+                {/* 1x View Once Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsViewOnceSelected(!isViewOnceSelected)}
+                  className={`p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-full transition-all shrink-0 ${
+                    isViewOnceSelected ? 'text-amber-500' : 'text-slate-900 dark:text-white active:opacity-60'
+                  }`}
+                  title="Toggle 1x View Once Photo"
+                >
+                  <Eye className="w-5 h-5" />
+                </button>
+              </div>
 
-              <button
-                type="submit"
-                disabled={isUploadingFile}
-                className="py-2.5 sm:py-2 px-3.5 sm:px-4 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1 hover:bg-blue-700 active:bg-blue-700 transition-colors disabled:opacity-50 shrink-0"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>Send</span>
-              </button>
+              {inputText.trim() ? (
+                <button
+                  type="submit"
+                  disabled={isUploadingFile}
+                  className="text-[#0095F6] font-semibold text-sm px-3 py-2 disabled:opacity-50 shrink-0"
+                >
+                  Send
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleVoiceRecordToggle}
+                  className={`p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-full transition-all shrink-0 ${
+                    isRecordingVoice ? 'text-rose-500 animate-pulse' : 'text-slate-900 dark:text-white active:bg-slate-100 dark:active:bg-slate-800'
+                  }`}
+                  title="Voice Note"
+                >
+                  <Mic className="w-6 h-6" />
+                </button>
+              )}
             </form>
           </>
         )}
@@ -1553,14 +1632,31 @@ export const ChatView: React.FC = () => {
                 <Camera className="w-4 h-4 text-blue-400" />
                 <span>Camera Snap</span>
               </h3>
-              <button onClick={stopCamera} className="p-1 rounded-full bg-slate-800 text-slate-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                {!capturedPhoto && (
+                  <button
+                    onClick={flipCamera}
+                    className="p-1.5 rounded-full bg-slate-800 text-slate-300 hover:text-white"
+                    title="Switch Camera"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                )}
+                <button onClick={stopCamera} className="p-1 rounded-full bg-slate-800 text-slate-400 hover:text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="relative rounded-2xl overflow-hidden bg-black aspect-video flex items-center justify-center border border-slate-800">
               {!capturedPhoto ? (
-                <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className={`w-full h-full object-cover ${cameraFacingMode === 'user' ? 'scale-x-[-1]' : ''}`}
+                />
               ) : (
                 <img src={capturedPhoto} alt="Captured preview" className="w-full h-full object-cover" />
               )}

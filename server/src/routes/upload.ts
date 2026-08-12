@@ -1,45 +1,41 @@
 import express from 'express';
 import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
-import { PUBLIC_URL } from '../config/env';
+import { v2 as cloudinary } from 'cloudinary';
+import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import { authMiddleware } from '../middleware/authMiddleware';
+import { CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET } from '../config/env';
 
 const router = express.Router();
 
-// Ensure uploads folder exists
-const uploadDir = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Multer Disk Storage Engine
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname) || '.jpg';
-    cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
-  }
+cloudinary.config({
+  cloud_name: CLOUDINARY_CLOUD_NAME,
+  api_key: CLOUDINARY_API_KEY,
+  api_secret: CLOUDINARY_API_SECRET,
 });
 
-const upload = multer({ storage });
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: async (req, file) => ({
+    folder: 'uniconnect',
+    resource_type: file.mimetype.startsWith('video') ? 'video' : 'image',
+  }),
+});
 
-// File Upload Handler (Images, Videos, Avatars, Voice Notes)
+const upload = multer({ storage, limits: { fileSize: 100 * 1024 * 1024 } });
+
+// File Upload Handler (Images, Videos, Avatars, Voice Notes) — stored permanently on Cloudinary
 router.post('/', authMiddleware, upload.single('file'), (req, res) => {
-  if (!req.file) {
+  const file = req.file as Express.Multer.File & { path: string; filename: string };
+  if (!file) {
     return res.status(400).json({ success: false, message: 'No file uploaded' });
   }
 
-  const fileUrl = `${PUBLIC_URL}/uploads/${req.file.filename}`;
   res.json({
     success: true,
-    fileUrl,
-    filename: req.file.filename,
-    mimetype: req.file.mimetype,
-    size: req.file.size
+    fileUrl: file.path,
+    filename: file.filename,
+    mimetype: file.mimetype,
+    size: file.size,
   });
 });
 

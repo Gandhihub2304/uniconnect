@@ -1,16 +1,20 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Compass, Heart, MessageCircle, Hash, TrendingUp } from 'lucide-react';
+import { Compass, Heart, MessageCircle, Hash, TrendingUp, Users, MessageSquare } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { apiGet, apiPost } from '@/lib/api';
 
 export const ExploreView: React.FC = () => {
-  const { user } = useAppStore();
+  const { user, login, token, openChatWithUser } = useAppStore();
   const [posts, setPosts] = useState<any[]>([]);
   const [trendingHashtags, setTrendingHashtags] = useState<{ tag: string; count: number }[]>([]);
   const [activeHashtag, setActiveHashtag] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  const [suggestedUsers, setSuggestedUsers] = useState<any[]>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(true);
+  const [followLoadingId, setFollowLoadingId] = useState<string | null>(null);
 
   const fetchExplore = async (hashtag?: string | null) => {
     try {
@@ -28,10 +32,28 @@ export const ExploreView: React.FC = () => {
     }
   };
 
+  const fetchSuggestedUsers = async () => {
+    try {
+      setIsLoadingSuggestions(true);
+      const data = await apiGet('/api/auth/suggestions?all=true');
+      if (data.success) {
+        setSuggestedUsers(data.users || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch suggested users:', err);
+    } finally {
+      setIsLoadingSuggestions(false);
+    }
+  };
+
   useEffect(() => {
     fetchExplore(activeHashtag);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeHashtag]);
+
+  useEffect(() => {
+    fetchSuggestedUsers();
+  }, []);
 
   const handleLike = async (postId: string) => {
     try {
@@ -46,6 +68,20 @@ export const ExploreView: React.FC = () => {
     }
   };
 
+  const handleToggleFollow = async (targetId: string) => {
+    try {
+      setFollowLoadingId(targetId);
+      const data = await apiPost(`/api/auth/follow/${targetId}`);
+      if (data.success) {
+        login(data.user, token!);
+      }
+    } catch (err) {
+      console.error('Failed to toggle follow:', err);
+    } finally {
+      setFollowLoadingId(null);
+    }
+  };
+
   return (
     <div className="space-y-4 max-w-4xl mx-auto pb-12 select-none">
       {/* Header */}
@@ -54,6 +90,58 @@ export const ExploreView: React.FC = () => {
           Explore <Compass className="w-4 h-4 text-blue-500" />
         </h1>
         <p className="text-xs text-slate-500 font-medium">Trending posts and hashtags from the last 7 days</p>
+      </div>
+
+      {/* Suggested People — WhatsApp-contact-list style, everyone you can follow */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+          <Users className="w-4 h-4 text-blue-500" />
+          <h2 className="text-sm font-black text-slate-900 dark:text-white">Suggested for You</h2>
+        </div>
+
+        {isLoadingSuggestions ? (
+          <div className="p-6 text-center text-xs font-bold text-slate-400 animate-pulse">Loading people...</div>
+        ) : suggestedUsers.length === 0 ? (
+          <div className="p-6 text-center text-xs text-slate-400 font-medium">No suggestions right now.</div>
+        ) : (
+          <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[420px] overflow-y-auto">
+            {suggestedUsers.map((u) => {
+              const isFollowing = (user?.following || []).includes(u._id);
+              const isLoadingThis = followLoadingId === u._id;
+              return (
+                <div key={u._id} className="flex items-center gap-3 px-4 py-3">
+                  <img
+                    src={u.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300"}
+                    alt={u.name}
+                    className="w-11 h-11 rounded-full object-cover shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{u.name}</p>
+                    <p className="text-xs text-slate-400 truncate">@{u.username}</p>
+                  </div>
+                  <button
+                    onClick={() => openChatWithUser(u._id)}
+                    className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full text-slate-400 hover:text-blue-600 active:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-100 dark:active:bg-slate-800 transition-colors shrink-0"
+                    title="Message"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleToggleFollow(u._id)}
+                    disabled={isLoadingThis}
+                    className={`shrink-0 px-4 py-1.5 rounded-lg font-bold text-xs shadow-sm transition-all disabled:opacity-50 ${
+                      isFollowing
+                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-700 text-white'
+                    }`}
+                  >
+                    {isLoadingThis ? '...' : isFollowing ? 'Following' : 'Follow'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Trending Hashtags */}

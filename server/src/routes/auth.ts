@@ -196,10 +196,13 @@ router.put('/settings', authMiddleware, async (req: AuthRequest, res) => {
   }
 });
 
-// Suggestions (users you may know)
+// Suggestions (users you may know). Pass ?all=true to list every user (used by the mobile Explore "People" tab).
 router.get('/suggestions', authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const users = await UserModel.find({ _id: { $ne: req.user.id } }).select('-password').limit(6);
+    const showAll = req.query.all === 'true';
+    let query = UserModel.find({ _id: { $ne: req.user.id } }).select('-password');
+    if (!showAll) query = query.limit(6);
+    const users = await query;
     res.json({ success: true, users });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message || 'Error fetching suggestions' });

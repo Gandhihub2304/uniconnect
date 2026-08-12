@@ -896,9 +896,9 @@ export const ChatView: React.FC = () => {
   };
 
   return (
-    <div className="h-[calc(100vh-6.5rem)] grid grid-cols-1 md:grid-cols-3 gap-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-2 overflow-hidden select-none relative">
-      {/* Left Chat List Column (Static Container) */}
-      <div className="md:col-span-1 border-r border-slate-200 dark:border-slate-800 p-3 flex flex-col h-full overflow-hidden">
+    <div className="h-[calc(100vh-9.5rem)] md:h-[calc(100vh-6.5rem)] grid grid-cols-1 md:grid-cols-3 gap-0 md:gap-4 bg-white dark:bg-slate-900 rounded-none md:rounded-2xl border-0 md:border border-slate-200 dark:border-slate-800 shadow-sm p-0 md:p-2 overflow-hidden select-none relative -m-2.5 sm:-m-4 md:m-0">
+      {/* Left Chat List Column — full-screen on mobile until a chat is opened, always visible on md+ */}
+      <div className={`${activeChatId ? 'hidden md:flex' : 'flex'} md:col-span-1 border-r border-slate-200 dark:border-slate-800 p-3 flex-col h-full overflow-hidden`}>
         {/* Header & Search Bar (Fixed Top) */}
         <div className="space-y-3 flex-shrink-0">
           <div className="flex items-center justify-between">
@@ -982,8 +982,8 @@ export const ChatView: React.FC = () => {
         </div>
       </div>
 
-      {/* Right Conversation Window (Smooth Scrolling Chat Box) */}
-      <div className="md:col-span-2 p-3 flex flex-col h-full overflow-hidden bg-slate-50/50 dark:bg-slate-950/40 rounded-2xl relative">
+      {/* Right Conversation Window (Smooth Scrolling Chat Box) — full-screen on mobile once a chat is open */}
+      <div className={`${activeChatId ? 'flex' : 'hidden md:flex'} md:col-span-2 p-2 md:p-3 flex-col h-full overflow-hidden bg-slate-50/50 dark:bg-slate-950/40 rounded-none md:rounded-2xl relative`}>
         {!activeChat ? (
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-2.5">
             <MessageCircle className="w-10 h-10 text-blue-500 opacity-60" />
@@ -995,20 +995,27 @@ export const ChatView: React.FC = () => {
         ) : (
           <>
             {/* Active Chat Header Bar (Static Top Bar) */}
-            <div className="p-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between shadow-sm flex-shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="relative">
+            <div className="p-2.5 md:p-3 bg-white dark:bg-slate-900 rounded-none md:rounded-2xl border-0 md:border border-slate-200 dark:border-slate-800 flex items-center justify-between shadow-sm flex-shrink-0">
+              <div className="flex items-center gap-2 md:gap-3 min-w-0">
+                <button
+                  onClick={() => setActiveChatId(null)}
+                  className="md:hidden p-1.5 -ml-1 rounded-full text-slate-600 dark:text-slate-300 active:bg-slate-100 dark:active:bg-slate-800 shrink-0"
+                  aria-label="Back to chats"
+                >
+                  <ChevronDown className="w-5 h-5 rotate-90" />
+                </button>
+                <div className="relative shrink-0">
                   <img src={activeChat.avatar} alt={activeChat.name} className="w-10 h-10 rounded-full object-cover" />
                   {(activeChat.otherUserId ? onlineUserIds.has(activeChat.otherUserId) : activeChat.isOnline) && (
                     <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900"></span>
                   )}
                 </div>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <div className="min-w-0">
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5 truncate">
                     {activeChat.name}
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                   </h3>
-                  <p className="text-[10px] text-slate-400 font-medium">
+                  <p className="text-[10px] text-slate-400 font-medium truncate">
                     @{activeChat.username} •{' '}
                     {typingUserName ? (
                       <span className="text-blue-500 font-bold">typing...</span>
@@ -1023,24 +1030,25 @@ export const ChatView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 relative">
+              <div className="flex items-center gap-1 sm:gap-2 relative shrink-0">
                 {/* Disappearing Messages Dropdown Trigger */}
-                <button 
+                <button
                   onClick={() => setIsTimerMenuOpen(!isTimerMenuOpen)}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                    disappearingTimer !== 'off' 
-                      ? 'bg-amber-500 text-white shadow-md' 
+                  className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    disappearingTimer !== 'off'
+                      ? 'bg-amber-500 text-white shadow-md'
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
                   }`}
+                  title={disappearingTimer === 'off' ? 'Disappearing Off' : `Self-Destruct (${disappearingTimer})`}
                 >
                   <Flame className="w-3.5 h-3.5" />
-                  <span>{disappearingTimer === 'off' ? 'Disappearing Off' : `Self-Destruct (${disappearingTimer})`}</span>
+                  <span className="hidden sm:inline">{disappearingTimer === 'off' ? 'Disappearing Off' : `Self-Destruct (${disappearingTimer})`}</span>
                   <ChevronDown className="w-3 h-3" />
                 </button>
 
                 {/* Timer Options Menu */}
                 {isTimerMenuOpen && (
-                  <div className="absolute right-32 top-10 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-lg p-1.5 z-30 text-xs font-semibold text-slate-700 dark:text-slate-200 space-y-1">
+                  <div className="absolute right-0 top-10 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-lg p-1.5 z-30 text-xs font-semibold text-slate-700 dark:text-slate-200 space-y-1">
                     <button 
                       onClick={() => handleSetDisappearingTimer('off')}
                       className={`w-full px-3 py-2 rounded-xl text-left ${disappearingTimer === 'off' ? 'bg-blue-50 dark:bg-blue-950 font-bold text-blue-600' : 'hover:bg-slate-100 dark:hover:bg-slate-700'}`}
@@ -1068,25 +1076,25 @@ export const ChatView: React.FC = () => {
                   </div>
                 )}
 
-                <button 
+                <button
                   onClick={() => startCall(activeChat.id, activeChat.name, 'voice')}
-                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  className="p-2 sm:p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 active:bg-slate-200 dark:active:bg-slate-700 transition-colors"
                   title="Voice Call"
                 >
                   <Phone className="w-4 h-4 text-emerald-500" />
                 </button>
-                <button 
+                <button
                   onClick={() => startCall(activeChat.id, activeChat.name, 'video')}
-                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 active:bg-slate-200 dark:active:bg-slate-700 transition-colors"
                   title="Video Call"
                 >
                   <Video className="w-4 h-4 text-blue-500" />
                 </button>
 
                 {/* Clear Chat Button */}
-                <button 
+                <button
                   onClick={handleClearChat}
-                  className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-colors"
+                  className="hidden sm:flex p-2 min-w-[36px] min-h-[36px] items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 active:bg-rose-100 dark:active:bg-rose-900/60 transition-colors"
                   title="Clear Chat History (Both Sides)"
                 >
                   <Trash2 className="w-4 h-4 text-rose-500" />
@@ -1131,7 +1139,7 @@ export const ChatView: React.FC = () => {
                         <div className="relative flex items-center">
                           <button
                             onClick={() => setActiveMenuMsgId(activeMenuMsgId === msg.id ? null : msg.id)}
-                            className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors opacity-0 group-hover:opacity-100"
+                            className="p-1.5 min-w-[28px] min-h-[28px] rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-800 transition-colors opacity-70 md:opacity-0 md:group-hover:opacity-100"
                             title="Message Options"
                           >
                             <MoreVertical className="w-4 h-4" />
@@ -1234,7 +1242,7 @@ export const ChatView: React.FC = () => {
                                       className="w-full max-h-60 object-cover cursor-pointer rounded-xl transition-transform hover:scale-[1.01]" 
                                       onClick={() => setPreviewImageModal(msg.mediaUrl)}
                                     />
-                                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                                    <div className="absolute top-2 right-2 opacity-90 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex gap-1">
                                       <a 
                                         href={msg.mediaUrl} 
                                         download={msg.fileName || 'photo.jpg'} 
@@ -1346,7 +1354,7 @@ export const ChatView: React.FC = () => {
                         <div className="relative flex items-center">
                           <button
                             onClick={() => setActiveMenuMsgId(activeMenuMsgId === msg.id ? null : msg.id)}
-                            className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors opacity-0 group-hover:opacity-100"
+                            className="p-1.5 min-w-[28px] min-h-[28px] rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-800 transition-colors opacity-70 md:opacity-0 md:group-hover:opacity-100"
                             title="Message Options"
                           >
                             <MoreVertical className="w-4 h-4" />
@@ -1454,9 +1462,9 @@ export const ChatView: React.FC = () => {
             )}
 
             {/* Dynamic Message Form Input Bar (Static Bottom Bar) */}
-            <form onSubmit={handleSendMessage} className="p-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center gap-2 shadow-sm relative flex-shrink-0">
+            <form onSubmit={handleSendMessage} className="p-1.5 sm:p-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center gap-0.5 sm:gap-2 shadow-sm relative flex-shrink-0">
               <input
-                type="file" 
+                type="file"
                 ref={chatFileRef}
                 onChange={handleChatFileChange}
                 accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.zip"
@@ -1464,21 +1472,21 @@ export const ChatView: React.FC = () => {
               />
 
               {/* Attach File Button */}
-              <button 
+              <button
                 type="button"
                 onClick={() => chatFileRef.current?.click()}
                 disabled={isUploadingFile}
-                className="p-2 text-slate-400 hover:text-blue-600 transition-colors disabled:opacity-50"
+                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-blue-600 active:text-blue-600 transition-colors disabled:opacity-50"
                 title="Attach File / Document / Photo"
               >
                 {isUploadingFile ? <RefreshCw className="w-4 h-4 animate-spin text-blue-500" /> : <Paperclip className="w-4 h-4" />}
               </button>
 
               {/* Camera Photo Button */}
-              <button 
+              <button
                 type="button"
                 onClick={startCamera}
-                className="p-2 text-slate-400 hover:text-blue-500 transition-colors"
+                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-blue-500 active:text-blue-500 transition-colors"
                 title="Take Photo with Camera"
               >
                 <Camera className="w-4 h-4" />
@@ -1488,9 +1496,9 @@ export const ChatView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsViewOnceSelected(!isViewOnceSelected)}
-                className={`px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1 transition-all ${
-                  isViewOnceSelected 
-                    ? 'bg-amber-500 text-white shadow-md' 
+                className={`hidden xs:flex px-2 sm:px-2.5 py-1 min-h-[36px] rounded-xl text-xs font-bold items-center gap-1 transition-all ${
+                  isViewOnceSelected
+                    ? 'bg-amber-500 text-white shadow-md'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
                 }`}
                 title="Toggle 1x View Once Photo"
@@ -1500,17 +1508,17 @@ export const ChatView: React.FC = () => {
               </button>
 
               {/* Voice Record Button */}
-              <button 
+              <button
                 type="button"
                 onClick={handleVoiceRecordToggle}
-                className={`p-2 rounded-xl transition-all ${isRecordingVoice ? 'bg-rose-500 text-white animate-pulse' : 'text-slate-400 hover:text-emerald-500'}`}
+                className={`p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-xl transition-all ${isRecordingVoice ? 'bg-rose-500 text-white animate-pulse' : 'text-slate-400 hover:text-emerald-500 active:text-emerald-500'}`}
                 title="Voice Note"
               >
                 <Mic className="w-4 h-4" />
               </button>
 
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={inputText}
                 onChange={handleInputChange}
                 placeholder={
@@ -1520,13 +1528,13 @@ export const ChatView: React.FC = () => {
                       ? `Send disappearing message (${disappearingTimer})...` 
                       : `Message ${activeChat.name.split(' ')[0]}...`
                 }
-                className="flex-1 px-3 py-2 bg-transparent text-xs text-slate-900 dark:text-white focus:outline-none"
+                className="flex-1 min-w-0 px-2 sm:px-3 py-2.5 sm:py-2 bg-transparent text-sm sm:text-xs text-slate-900 dark:text-white focus:outline-none"
               />
 
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 disabled={isUploadingFile}
-                className="py-2 px-4 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1 hover:bg-blue-700 transition-colors disabled:opacity-50"
+                className="py-2.5 sm:py-2 px-3.5 sm:px-4 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1 hover:bg-blue-700 active:bg-blue-700 transition-colors disabled:opacity-50 shrink-0"
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>Send</span>

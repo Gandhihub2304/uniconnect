@@ -40,7 +40,7 @@ export const LeftSidebar: React.FC = () => {
 
   return (
     <aside
-      className="w-60 h-screen sticky top-0 flex flex-col z-30 select-none"
+      className="hidden md:flex w-60 h-screen sticky top-0 flex-col z-30 select-none"
       style={{ background: 'var(--bg-panel)', borderRight: '1px solid var(--border-default)' }}
     >
       {/* Brand */}

@@ -212,27 +212,27 @@ export const DashboardView: React.FC = () => {
     <div className="space-y-4 max-w-4xl mx-auto pb-12 relative">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 px-4 py-2.5 bg-slate-900 text-white text-xs font-bold rounded-2xl border border-slate-700 shadow-lg animate-in fade-in slide-in-from-top-2">
+        <div className="fixed top-20 right-4 left-4 sm:left-auto sm:right-6 z-50 px-4 py-2.5 bg-slate-900 text-white text-xs font-bold rounded-2xl border border-slate-700 shadow-lg animate-in fade-in slide-in-from-top-2 text-center sm:text-left">
           {toastMessage}
         </div>
       )}
 
       {/* Top Banner Greeting & Create Post Button */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="min-w-0">
+          <h1 className="text-base sm:text-xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2 truncate">
             {getGreeting()}, {user?.name || 'Manoj Gandhi'}! 👋
           </h1>
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+          <p className="hidden sm:block text-xs font-medium text-slate-500 dark:text-slate-400">
             Discover what's happening around you
           </p>
         </div>
         <button
           onClick={() => setCreatePostOpen(true)}
-          className="flex items-center gap-1.5 py-2 px-3.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all hover:scale-[1.02]"
+          className="shrink-0 flex items-center gap-1.5 py-2 px-3 sm:px-3.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all sm:hover:scale-[1.02]"
         >
           <Plus className="w-3.5 h-3.5" />
-          <span>Create Post</span>
+          <span className="hidden xs:inline">Create Post</span>
         </button>
       </div>
 
@@ -295,9 +295,9 @@ export const DashboardView: React.FC = () => {
             </div>
             <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate max-w-[64px]">{story.user?.name || story.userName}</span>
 
-            {/* Hover Floating Card Preview */}
+            {/* Hover Floating Card Preview (desktop only — no hover on touch) */}
             {hoveredStoryId === (story._id || `story_${idx}`) && (
-              <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-44 p-2 bg-slate-900/90 text-white rounded-2xl border border-slate-700 shadow-lg z-30 pointer-events-none animate-in fade-in zoom-in-95 duration-150 text-center">
+              <div className="hidden md:block absolute bottom-20 left-1/2 -translate-x-1/2 w-44 p-2 bg-slate-900/90 text-white rounded-2xl border border-slate-700 shadow-lg z-30 pointer-events-none animate-in fade-in zoom-in-95 duration-150 text-center">
                 <img
                   src={story.mediaUrl || story.media || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&q=80&w=600"}
                   alt="Story preview"
@@ -327,30 +327,30 @@ export const DashboardView: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-400 flex-wrap gap-2">
-          <div className="flex items-center gap-3.5">
-            <button onClick={() => setCreatePostOpen(true)} className="flex items-center gap-1 hover:text-blue-600 transition-colors">
+        <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-400 gap-2">
+          <div className="flex items-center gap-2.5 sm:gap-3.5 overflow-x-auto scrollbar-none min-w-0">
+            <button onClick={() => setCreatePostOpen(true)} className="shrink-0 flex items-center gap-1 hover:text-blue-600 active:text-blue-600 transition-colors">
               <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
               <span>Photo</span>
             </button>
-            <button onClick={() => setCreatePostOpen(true)} className="flex items-center gap-1 hover:text-blue-600 transition-colors">
+            <button onClick={() => setCreatePostOpen(true)} className="shrink-0 flex items-center gap-1 hover:text-blue-600 active:text-blue-600 transition-colors">
               <Video className="w-3.5 h-3.5 text-cyan-500" />
               <span>Video</span>
             </button>
-            <button onClick={() => setCreatePostOpen(true)} className="flex items-center gap-1 hover:text-blue-600 transition-colors">
+            <button onClick={() => setCreatePostOpen(true)} className="shrink-0 flex items-center gap-1 hover:text-blue-600 active:text-blue-600 transition-colors">
               <Mic className="w-3.5 h-3.5 text-emerald-500" />
               <span>Voice</span>
             </button>
-            <button onClick={() => setCreatePostOpen(true)} className="flex items-center gap-1 hover:text-blue-600 transition-colors">
+            <button onClick={() => setCreatePostOpen(true)} className="shrink-0 flex items-center gap-1 hover:text-blue-600 active:text-blue-600 transition-colors">
               <Smile className="w-3.5 h-3.5 text-amber-500" />
               <span>Feeling</span>
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => setCreatePostOpen(true)}
-              className="py-1.5 px-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-sm transition-all"
+              className="py-1.5 px-3.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-700 text-white font-bold rounded-lg shadow-sm transition-all"
             >
               Post
             </button>
@@ -408,7 +408,7 @@ export const DashboardView: React.FC = () => {
                 <div className="relative">
                   <button
                     onClick={() => setActiveMenuPostId(isMenuOpen ? null : post._id)}
-                    className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 transition-colors"
+                    className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-100 dark:active:bg-slate-800 text-slate-400 transition-colors"
                   >
                     <MoreHorizontal className="w-5 h-5" />
                   </button>
@@ -521,11 +521,11 @@ export const DashboardView: React.FC = () => {
                       onChange={(e) => setCommentInputs({ ...commentInputs, [post._id]: e.target.value })}
                       onKeyDown={(e) => e.key === 'Enter' && handleAddComment(post._id)}
                       placeholder="Write a comment..."
-                      className="flex-1 px-3 py-2 bg-white dark:bg-slate-800 rounded-xl text-xs text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 focus:outline-none"
+                      className="flex-1 min-w-0 px-3 py-2.5 sm:py-2 bg-white dark:bg-slate-800 rounded-xl text-sm sm:text-xs text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 focus:outline-none"
                     />
                     <button
                       onClick={() => handleAddComment(post._id)}
-                      className="p-2 bg-blue-600 text-white rounded-xl shadow-sm hover:bg-blue-700"
+                      className="p-2.5 min-w-[40px] min-h-[40px] flex items-center justify-center bg-blue-600 text-white rounded-xl shadow-sm hover:bg-blue-700 active:bg-blue-700 shrink-0"
                     >
                       <Send className="w-3.5 h-3.5" />
                     </button>

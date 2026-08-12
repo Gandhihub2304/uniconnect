@@ -54,19 +54,20 @@ export const TopBar: React.FC = () => {
   return (
     <>
       <header
-        className="h-14 sticky top-0 z-20 px-4 flex items-center justify-between gap-4 shrink-0"
+        className="min-h-[3.5rem] sticky top-0 z-20 px-3 sm:px-4 flex items-center justify-between gap-2 sm:gap-4 shrink-0"
         style={{
           background: 'var(--bg-panel)',
           opacity: 0.98,
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
           borderBottom: '1px solid var(--border-default)',
+          paddingTop: 'env(safe-area-inset-top)',
         }}
       >
         {/* Search */}
         <div
           onClick={() => setCommandPaletteOpen(true)}
-          className="flex-1 max-w-xl flex items-center gap-3 px-4 py-2.5 rounded-xl cursor-pointer transition-all"
+          className="flex-1 max-w-xl flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 rounded-xl cursor-pointer transition-all active:scale-[0.99]"
           style={{ background: 'var(--bg-input)', border: '1px solid var(--border-default)' }}
           onMouseEnter={e => {
             (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-accent)';
@@ -78,8 +79,9 @@ export const TopBar: React.FC = () => {
           }}
         >
           <Search className="w-4 h-4 shrink-0" style={{ color: 'var(--text-muted)' }} />
-          <span className="text-sm flex-1 select-none" style={{ color: 'var(--text-muted)' }}>
-            Search people, communities, posts…
+          <span className="text-sm flex-1 select-none truncate" style={{ color: 'var(--text-muted)' }}>
+            <span className="hidden sm:inline">Search people, communities, posts…</span>
+            <span className="sm:hidden">Search</span>
           </span>
           <kbd
             className="px-2 py-0.5 text-[10px] font-bold rounded-md hidden sm:block"
@@ -90,11 +92,11 @@ export const TopBar: React.FC = () => {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
           {/* Theme toggle */}
           <button
             onClick={toggleTheme}
-            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
+            className="w-11 h-11 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all active:bg-[var(--bg-input)]"
             title="Toggle theme"
             onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-input)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
@@ -104,10 +106,10 @@ export const TopBar: React.FC = () => {
               : <Moon className="w-4 h-4" style={{ color: 'var(--accent)' }} />}
           </button>
 
-          {/* Messages */}
+          {/* Messages — hidden on mobile, reachable via bottom nav instead */}
           <button
             onClick={() => setActiveTab('chats')}
-            className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all"
+            className="hidden sm:flex relative w-9 h-9 rounded-xl items-center justify-center transition-all"
             style={{ color: 'var(--text-secondary)' }}
             onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-input)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
@@ -126,7 +128,7 @@ export const TopBar: React.FC = () => {
           {/* Notifications */}
           <button
             onClick={handleOpenNotifications}
-            className={`relative w-9 h-9 rounded-xl flex items-center justify-center transition-all ${bellShaking ? 'bell-shake' : ''}`}
+            className={`relative w-11 h-11 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all active:bg-[var(--bg-input)] ${bellShaking ? 'bell-shake' : ''}`}
             style={{ color: 'var(--text-secondary)' }}
             onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-input)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
@@ -142,10 +144,10 @@ export const TopBar: React.FC = () => {
             )}
           </button>
 
-          {/* Avatar */}
+          {/* Avatar — hidden on mobile, reachable via bottom nav instead */}
           <button
             onClick={() => setActiveTab('profile')}
-            className="ml-1 story-avatar-ring cursor-pointer transition-transform hover:scale-105"
+            className="hidden sm:block ml-1 story-avatar-ring cursor-pointer transition-transform hover:scale-105"
             style={{ borderRadius: '9999px' }}
             title="My Profile"
           >

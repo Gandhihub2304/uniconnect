@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Grid, CheckCircle2, Edit3, X, Save, Upload, Camera, Heart, MessageCircle } from 'lucide-react';
+import { Grid, CheckCircle2, Edit3, X, Save, Upload, Camera, Heart, MessageCircle, Menu, Settings, LogOut } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { apiPut, apiPost, apiUpload, apiGet } from '@/lib/api';
 import { StoryViewerModal } from '@/components/stories/StoryViewerModal';
 
 export const ProfileView: React.FC = () => {
-  const { user, login, token } = useAppStore();
+  const { user, login, token, setActiveTab, logout } = useAppStore();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Edit Profile Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -163,24 +164,39 @@ export const ProfileView: React.FC = () => {
     <div className="space-y-4 max-w-4xl mx-auto pb-12 select-none">
       {/* Profile Header */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
-        <div className="p-6">
-          <div className="flex items-start gap-8">
+        <div className="p-4 sm:p-6">
+          {/* Mobile-only top bar: username + menu button */}
+          <div className="flex sm:hidden items-center justify-between mb-4">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+              {user?.username || 'user'}
+              <CheckCircle2 className="w-4 h-4 text-blue-500 fill-blue-500/20" />
+            </h2>
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="p-2 -mr-2 rounded-lg active:bg-slate-100 dark:active:bg-slate-800"
+              aria-label="Menu"
+            >
+              <Menu className="w-5 h-5 text-slate-700 dark:text-slate-200" />
+            </button>
+          </div>
+
+          <div className="flex flex-col items-center text-center gap-3 sm:flex-row sm:items-start sm:text-left sm:gap-8">
             <div className="relative group cursor-pointer shrink-0" onClick={() => setIsEditModalOpen(true)}>
               <div className="story-avatar-ring">
                 <img
                   src={user?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300"}
                   alt={user?.name || "Profile"}
-                  className="w-24 h-24 rounded-full border-2 border-white dark:border-slate-900 object-cover"
+                  className="w-20 h-20 sm:w-24 sm:h-24 rounded-full border-2 border-white dark:border-slate-900 object-cover"
                 />
               </div>
-              <div className="absolute inset-0 bg-black/40 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-[10px] font-bold">
-                <Camera className="w-6 h-6 mb-1" />
+              <div className="absolute inset-0 bg-black/40 rounded-full flex flex-col items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-white text-[10px] font-bold">
+                <Camera className="w-5 h-5 sm:w-6 sm:h-6 mb-1" />
                 <span>Change Photo</span>
               </div>
             </div>
 
-            <div className="flex-1 min-w-0 space-y-3">
-              <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex-1 min-w-0 w-full space-y-3">
+              <div className="hidden sm:flex items-center gap-3 flex-wrap">
                 <h2 className="text-lg font-normal text-slate-900 dark:text-white flex items-center gap-1.5">
                   {user?.username || "user"}
                   <CheckCircle2 className="w-4 h-4 text-blue-500 fill-blue-500/20" />
@@ -194,17 +210,17 @@ export const ProfileView: React.FC = () => {
                 </button>
               </div>
 
-              <div className="flex items-center gap-8">
-                <span className="text-sm">
-                  <strong className="text-slate-900 dark:text-white">{myPosts.length}</strong>{' '}
+              <div className="flex items-center justify-center sm:justify-start gap-6 sm:gap-8">
+                <span className="text-sm text-center">
+                  <strong className="block sm:inline text-slate-900 dark:text-white">{myPosts.length}</strong>{' '}
                   <span className="text-slate-500 dark:text-slate-400">posts</span>
                 </span>
-                <button onClick={() => openFollowModal('followers')} className="text-sm hover:opacity-70 transition-opacity">
-                  <strong className="text-slate-900 dark:text-white">{(user?.followers || []).length}</strong>{' '}
+                <button onClick={() => openFollowModal('followers')} className="text-sm text-center hover:opacity-70 transition-opacity">
+                  <strong className="block sm:inline text-slate-900 dark:text-white">{(user?.followers || []).length}</strong>{' '}
                   <span className="text-slate-500 dark:text-slate-400">followers</span>
                 </button>
-                <button onClick={() => openFollowModal('following')} className="text-sm hover:opacity-70 transition-opacity">
-                  <strong className="text-slate-900 dark:text-white">{(user?.following || []).length}</strong>{' '}
+                <button onClick={() => openFollowModal('following')} className="text-sm text-center hover:opacity-70 transition-opacity">
+                  <strong className="block sm:inline text-slate-900 dark:text-white">{(user?.following || []).length}</strong>{' '}
                   <span className="text-slate-500 dark:text-slate-400">following</span>
                 </button>
               </div>
@@ -219,6 +235,14 @@ export const ProfileView: React.FC = () => {
                   </a>
                 )}
               </div>
+
+              <button
+                onClick={() => setIsEditModalOpen(true)}
+                className="sm:hidden w-full py-2 bg-slate-100 dark:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-700 text-slate-900 dark:text-white font-semibold text-sm rounded-lg flex items-center justify-center gap-1.5"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Edit Profile</span>
+              </button>
             </div>
           </div>
 
@@ -273,19 +297,49 @@ export const ProfileView: React.FC = () => {
                   <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-4">{post.content}</p>
                 </div>
               )}
-              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 text-white text-sm font-bold">
-                <span className="flex items-center gap-1.5"><Heart className="w-4 h-4 fill-white" /> {post.likes || 0}</span>
-                <span className="flex items-center gap-1.5"><MessageCircle className="w-4 h-4 fill-white" /> {post.commentsCount || 0}</span>
+              <div className="absolute inset-x-0 bottom-0 sm:inset-0 bg-gradient-to-t from-black/70 sm:bg-black/50 sm:bg-none opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-end sm:items-center justify-center gap-3 sm:gap-4 text-white text-[10px] sm:text-sm font-bold p-1.5 sm:p-0">
+                <span className="flex items-center gap-1"><Heart className="w-3 h-3 sm:w-4 sm:h-4 fill-white" /> {post.likes || 0}</span>
+                <span className="flex items-center gap-1"><MessageCircle className="w-3 h-3 sm:w-4 sm:h-4 fill-white" /> {post.commentsCount || 0}</span>
               </div>
             </div>
           ))}
         </div>
       )}
 
+      {/* Mobile Menu Drawer (Settings / Logout) */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-end sm:hidden animate-in fade-in duration-150" onClick={() => setIsMobileMenuOpen(false)}>
+          <div
+            className="w-full bg-white dark:bg-slate-900 rounded-t-2xl p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto my-2" />
+            <button
+              onClick={() => { setIsMobileMenuOpen(false); setActiveTab('saved'); }}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-800 dark:text-slate-200 active:bg-slate-100 dark:active:bg-slate-800"
+            >
+              <Grid className="w-4 h-4" /> Saved
+            </button>
+            <button
+              onClick={() => { setIsMobileMenuOpen(false); setActiveTab('settings'); }}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-800 dark:text-slate-200 active:bg-slate-100 dark:active:bg-slate-800"
+            >
+              <Settings className="w-4 h-4" /> Settings
+            </button>
+            <button
+              onClick={() => { setIsMobileMenuOpen(false); logout(); }}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-rose-600 active:bg-rose-50 dark:active:bg-rose-950/40"
+            >
+              <LogOut className="w-4 h-4" /> Log Out
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Edit Profile Modal */}
       {isEditModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150 select-none">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl">
             <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-3">
               <h3 className="text-base font-black text-slate-900 dark:text-white">Edit Profile</h3>
               <button onClick={() => setIsEditModalOpen(false)} className="p-1 rounded-full text-slate-400 hover:bg-slate-100">
@@ -364,8 +418,8 @@ export const ProfileView: React.FC = () => {
       {/* Followers & Following Modal */}
       {followModalType && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150 select-none">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl">
-            <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-3">
+          <div className="w-full max-w-md max-h-[85vh] flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl">
+            <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-3 shrink-0">
               <h3 className="text-base font-black capitalize text-slate-900 dark:text-white">{followModalType}</h3>
               <button onClick={() => setFollowModalType(null)} className="p-1 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
                 <X className="w-5 h-5" />

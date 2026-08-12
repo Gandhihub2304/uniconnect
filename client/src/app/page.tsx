@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { LeftSidebar } from '@/components/layout/LeftSidebar';
 import { TopBar } from '@/components/layout/TopBar';
 import { RightSidebar } from '@/components/layout/RightSidebar';
+import { BottomNav } from '@/components/layout/BottomNav';
 
 import { DashboardView } from '@/components/feed/DashboardView';
 import { ChatView } from '@/components/chat/ChatView';
@@ -112,7 +113,7 @@ export default function Home() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TopBar />
         <main
-          className="flex-1 p-4 overflow-y-auto"
+          className="flex-1 p-2.5 sm:p-4 pb-20 md:pb-4 overflow-y-auto"
           style={{ background: 'var(--bg-app)' }}
         >
           {renderMainView()}
@@ -121,6 +122,9 @@ export default function Home() {
 
       {/* Right Widgets Sidebar */}
       {activeTab === 'home' && <RightSidebar />}
+
+      {/* Mobile Bottom Tab Bar */}
+      <BottomNav />
 
       {/* Global Modals */}
       <WebRTCCallModal />

@@ -105,7 +105,7 @@ export const ReelsView: React.FC = () => {
 
   if (!isLoading && reels.length === 0) {
     return (
-      <div className="max-w-md mx-auto h-[calc(100vh-6.5rem)] bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center gap-3 p-6 text-center">
+      <div className="max-w-md mx-auto h-[calc(100vh-9.5rem)] md:h-[calc(100vh-6.5rem)] bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center gap-3 p-6 text-center">
         <Clapperboard className="w-8 h-8 text-blue-500" />
         <h3 className="text-sm font-bold text-slate-900 dark:text-white">No reels yet</h3>
         <p className="text-xs text-slate-400">Be the first to share a reel with your circle!</p>
@@ -126,7 +126,7 @@ export const ReelsView: React.FC = () => {
 
   if (!currentReel) {
     return (
-      <div className="max-w-md mx-auto h-[calc(100vh-6.5rem)] flex items-center justify-center text-xs font-bold text-slate-400 animate-pulse">
+      <div className="max-w-md mx-auto h-[calc(100vh-9.5rem)] md:h-[calc(100vh-6.5rem)] flex items-center justify-center text-xs font-bold text-slate-400 animate-pulse">
         Loading reels...
       </div>
     );
@@ -135,7 +135,7 @@ export const ReelsView: React.FC = () => {
   const isLiked = !!(currentReel.likedBy && user?._id && currentReel.likedBy.includes(user._id));
 
   return (
-    <div className="max-w-md mx-auto h-[calc(100vh-6.5rem)] bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 relative shadow-xl flex flex-col justify-between p-4 select-none">
+    <div className="max-w-md mx-auto h-[calc(100vh-9.5rem)] md:h-[calc(100vh-6.5rem)] bg-slate-950 rounded-none md:rounded-2xl overflow-hidden border-0 md:border border-slate-800 relative shadow-xl flex flex-col justify-between p-4 select-none -mx-2.5 sm:-mx-4 md:mx-auto">
       {/* Background Video Media */}
       <video
         key={currentReel._id}

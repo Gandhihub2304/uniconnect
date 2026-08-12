@@ -95,6 +95,9 @@
 ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.35); border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.55); }
 
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
+
 /* ─── Utility Classes ───────────────────────────────────── */
 @layer components {
 

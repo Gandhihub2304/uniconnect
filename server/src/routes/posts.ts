@@ -8,14 +8,10 @@ import { createNotification } from '../utils/notify';
 
 const router = Router();
 
-// Get feed posts (with circle filtering)
+// Get feed posts
 router.get('/', authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const circle = (req.query.circle as string) || 'For You';
-    const filter: any = { isHidden: { $ne: true } };
-    if (circle !== 'For You') filter.circle = circle;
-
-    const posts = await PostModel.find(filter).sort({ isPinned: -1, createdAt: -1 });
+    const posts = await PostModel.find({ isHidden: { $ne: true } }).sort({ isPinned: -1, createdAt: -1 });
     res.json({ success: true, posts });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message || 'Error fetching posts' });
@@ -25,7 +21,7 @@ router.get('/', authMiddleware, async (req: AuthRequest, res) => {
 // Create new post
 router.post('/', authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const { content, media, circle } = req.body;
+    const { content, media } = req.body;
     const user = await UserModel.findById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
@@ -39,9 +35,7 @@ router.post('/', authMiddleware, async (req: AuthRequest, res) => {
       isVerified: true,
       content,
       media: media || [],
-      circle: circle || 'For You',
       hashtags,
-      aiSummary: `AI Summary: ${(content || '').substring(0, 80)}...`,
     });
 
     await postDoc.save();

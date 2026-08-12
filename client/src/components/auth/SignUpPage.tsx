@@ -9,8 +9,6 @@ interface SignUpPageProps {
   onSwitchToLogin: () => void;
 }
 
-const availableCircles = ['Friends', 'Family', 'College', 'Work', 'Gaming', 'Travel', 'Study Group', 'Best Friends'];
-
 export const SignUpPage: React.FC<SignUpPageProps> = ({ onSwitchToLogin }) => {
   const { login } = useAppStore();
   const [step, setStep] = useState(1);
@@ -21,35 +19,25 @@ export const SignUpPage: React.FC<SignUpPageProps> = ({ onSwitchToLogin }) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [selectedCircles, setSelectedCircles] = useState<string[]>(['Friends', 'College']);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const avatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300';
-  const bio = 'Building awesome memories on UniConnect 🚀';
-
-  const toggleCircle = (c: string) =>
-    setSelectedCircles(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]);
 
   const handleNext = () => {
     setError('');
-    if (step === 1) {
-      if (!name.trim() || !username.trim() || !email.trim()) { setError('Please fill in all fields.'); return; }
-      if (!/^[a-z0-9_]{3,20}$/i.test(username)) { setError('Username: 3–20 chars, letters/numbers/underscores only.'); return; }
-    }
-    if (step === 2) {
-      if (!password || password.length < 6) { setError('Password must be at least 6 characters.'); return; }
-      if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
-    }
-    setStep(s => s + 1);
+    if (!name.trim() || !username.trim() || !email.trim()) { setError('Please fill in all fields.'); return; }
+    if (!/^[a-z0-9_.]{3,20}$/i.test(username)) { setError('Username: 3–20 chars, letters/numbers/underscores/dots only.'); return; }
+    setStep(2);
   };
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedCircles.length === 0) { setError('Pick at least one privacy circle.'); return; }
+    if (!password || password.length < 6) { setError('Password must be at least 6 characters.'); return; }
+    if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
     setIsLoading(true); setError('');
     try {
-      const data = await apiPost('/api/auth/signup', { name, username, email, password, avatar, bio, circles: selectedCircles });
+      const data = await apiPost('/api/auth/signup', { name, username, email, password, avatar });
       if (data.success) login(data.user, data.token);
       else setError(data.message || 'Error creating account.');
     } catch (err: any) {
@@ -57,7 +45,7 @@ export const SignUpPage: React.FC<SignUpPageProps> = ({ onSwitchToLogin }) => {
     } finally { setIsLoading(false); }
   };
 
-  const stepLabels = ['Account', 'Security', 'Circles'];
+  const stepLabels = ['Account', 'Password'];
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50 select-none">
@@ -75,7 +63,7 @@ export const SignUpPage: React.FC<SignUpPageProps> = ({ onSwitchToLogin }) => {
           <div className="text-center space-y-0.5">
             <h2 className="text-xl font-black text-slate-900">Create account</h2>
             <p className="text-xs font-medium text-slate-500">
-              Step {step} of 3 — {stepLabels[step - 1]}
+              Step {step} of 2 — {stepLabels[step - 1]}
             </p>
           </div>
 
@@ -114,7 +102,7 @@ export const SignUpPage: React.FC<SignUpPageProps> = ({ onSwitchToLogin }) => {
                 <div className="relative">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-blue-600">@</span>
                   <input type="text" value={username}
-                    onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                    onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_.]/g, ''))}
                     placeholder="manoj_28"
                     className="w-full pl-8 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all" />
                 </div>
@@ -137,7 +125,7 @@ export const SignUpPage: React.FC<SignUpPageProps> = ({ onSwitchToLogin }) => {
 
           {/* STEP 2 */}
           {step === 2 && (
-            <div className="space-y-3.5">
+            <form onSubmit={handleSignUp} className="space-y-3.5">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Password</label>
                 <div className="relative">
@@ -174,49 +162,11 @@ export const SignUpPage: React.FC<SignUpPageProps> = ({ onSwitchToLogin }) => {
                   className="flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 bg-slate-100 border border-slate-200 text-slate-600 hover:bg-slate-200 transition-colors">
                   <ArrowLeft className="w-4 h-4" /> Back
                 </button>
-                <button type="button" onClick={handleNext}
-                  className="flex-[2] py-2.5 rounded-lg text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/25 transition-all flex items-center justify-center gap-2">
-                  Continue <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 3 */}
-          {step === 3 && (
-            <form onSubmit={handleSignUp} className="space-y-3.5">
-              <div>
-                <p className="text-xs font-semibold text-slate-900">Choose your privacy circles</p>
-                <p className="text-[11px] mt-0.5 text-slate-400">Control who sees your posts. Pick all that apply.</p>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {availableCircles.map(c => {
-                  const sel = selectedCircles.includes(c);
-                  return (
-                    <button key={c} type="button" onClick={() => toggleCircle(c)}
-                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all flex items-center gap-1 ${
-                        sel
-                          ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 scale-105'
-                          : 'bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200'
-                      }`}>
-                      {sel && <Check className="w-3 h-3" />}{c}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-[11px] text-slate-400">
-                {selectedCircles.length} circle{selectedCircles.length !== 1 ? 's' : ''} selected
-              </p>
-              <div className="flex gap-2.5">
-                <button type="button" onClick={() => setStep(2)}
-                  className="flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 bg-slate-100 border border-slate-200 text-slate-600 hover:bg-slate-200 transition-colors">
-                  <ArrowLeft className="w-4 h-4" /> Back
-                </button>
                 <button type="submit" disabled={isLoading}
                   className="flex-[2] py-2.5 rounded-lg text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 shadow-lg shadow-blue-600/25 transition-all flex items-center justify-center gap-2">
                   {isLoading
                     ? <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                    : <><Check className="w-4 h-4" /> Join UniConnect</>}
+                    : <><Check className="w-4 h-4" /> Sign Up</>}
                 </button>
               </div>
             </form>
@@ -231,7 +181,7 @@ export const SignUpPage: React.FC<SignUpPageProps> = ({ onSwitchToLogin }) => {
         </div>
 
         <p className="text-center text-[11px] mt-5 text-slate-400">
-          © 2025 UniConnect · Free forever for students
+          © 2025 UniConnect
         </p>
       </div>
     </div>

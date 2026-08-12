@@ -8,12 +8,10 @@ export interface IPostDocument extends Document {
   isVerified?: boolean;
   content: string;
   media: string[];
-  circle: string;
   likes: number;
   likedBy: string[];
   commentsCount: number;
   sharesCount: number;
-  aiSummary?: string;
   location?: string;
   isPinned?: boolean;
   isHidden?: boolean;
@@ -30,12 +28,10 @@ const PostSchema = new Schema<IPostDocument>(
     isVerified: { type: Boolean, default: false },
     content: { type: String, required: true },
     media: { type: [String], default: [] },
-    circle: { type: String, default: 'For You' },
     likes: { type: Number, default: 0 },
     likedBy: { type: [String], default: [] },
     commentsCount: { type: Number, default: 0 },
     sharesCount: { type: Number, default: 0 },
-    aiSummary: { type: String },
     location: { type: String },
     isPinned: { type: Boolean, default: false },
     isHidden: { type: Boolean, default: false },

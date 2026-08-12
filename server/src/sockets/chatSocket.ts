@@ -3,7 +3,6 @@ import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/env';
 import { ChatModel } from '../models/ChatModel';
 import { MessageModel } from '../models/MessageModel';
-import { ChannelMessageModel } from '../models/ChannelMessageModel';
 import { UserModel } from '../models/UserModel';
 
 // userId -> set of connected socket ids (a user can have multiple tabs)
@@ -46,10 +45,6 @@ export const setupSocketHandlers = (io: Server) => {
       socket.leave(`chat_${chatId}`);
     });
 
-    socket.on('join_channel', (data: { communityId: string; channelId: string }) => {
-      socket.join(`channel_${data.communityId}_${data.channelId}`);
-    });
-
     // Real-time chat message (also persisted so REST history matches)
     socket.on('send_message', async (data: { chatId: string; text: string; mediaUrl?: string; mediaType?: string; replyToId?: string }) => {
       if (!userId) return;
@@ -76,28 +71,6 @@ export const setupSocketHandlers = (io: Server) => {
         io.to(`chat_${data.chatId}`).emit('new_message', message);
       } catch (err) {
         console.error('send_message error:', err);
-      }
-    });
-
-    // Real-time community channel message
-    socket.on('send_channel_message', async (data: { communityId: string; channelId: string; text: string }) => {
-      if (!userId) return;
-      try {
-        const user = await UserModel.findById(userId);
-        if (!user) return;
-
-        const message = await ChannelMessageModel.create({
-          communityId: data.communityId,
-          channelId: data.channelId,
-          senderId: user._id.toString(),
-          senderName: user.name,
-          senderAvatar: user.avatar,
-          text: data.text,
-        });
-
-        io.to(`channel_${data.communityId}_${data.channelId}`).emit('new_channel_message', message);
-      } catch (err) {
-        console.error('send_channel_message error:', err);
       }
     });
 

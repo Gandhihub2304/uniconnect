@@ -21,6 +21,7 @@ export interface IMessageDocument extends Document {
   isDisappearing?: boolean;
   reactions?: { emoji: string; userId: string }[];
   replyToId?: string;
+  readBy?: string[];
   createdAt: Date;
 }
 
@@ -46,6 +47,7 @@ const MessageSchema = new Schema<IMessageDocument>(
     isDisappearing: { type: Boolean, default: false },
     reactions: { type: [{ emoji: String, userId: String }], default: [] },
     replyToId: { type: String },
+    readBy: { type: [String], default: [] },
   },
   { timestamps: true }
 );

@@ -1,24 +1,14 @@
 import { create } from 'zustand';
 import { disconnectSocket } from '@/lib/socket';
 
-export type NavTab = 
+export type NavTab =
   | 'home'
   | 'chats'
-  | 'stories'
-  | 'feed'
   | 'reels'
-  | 'communities'
-  | 'events'
-  | 'memories'
-  | 'ai'
-  | 'nearby'
-  | 'saved'
   | 'explore'
+  | 'saved'
   | 'profile'
-  | 'settings'
-  | 'admin';
-
-export type CircleFilter = 'For You' | 'Friends' | 'Family' | 'College' | 'Work' | 'Gaming' | 'Travel';
+  | 'settings';
 
 export interface UserProfile {
   _id: string;
@@ -29,8 +19,7 @@ export interface UserProfile {
   coverImage?: string;
   bio?: string;
   location?: string;
-  circles: string[];
-  vaultPin?: string;
+  website?: string;
   followers?: string[];
   following?: string[];
 }
@@ -45,17 +34,11 @@ interface AppState {
   activeTab: NavTab;
   setActiveTab: (tab: NavTab) => void;
 
-  circleFilter: CircleFilter;
-  setCircleFilter: (circle: CircleFilter) => void;
-
   theme: 'light' | 'dark';
   toggleTheme: () => void;
 
   isCommandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
-
-  isAIAssistantOpen: boolean;
-  setAIAssistantOpen: (open: boolean) => void;
 
   isCreatePostOpen: boolean;
   setCreatePostOpen: (open: boolean) => void;
@@ -71,9 +54,6 @@ interface AppState {
   incomingCall: { fromId: string; fromName: string; offer: any; callType: 'voice' | 'video' } | null;
   setIncomingCall: (call: AppState['incomingCall']) => void;
   acceptIncomingCall: () => void;
-
-  isVaultUnlocked: boolean;
-  setVaultUnlocked: (unlocked: boolean) => void;
 
   pendingChatUserId: string | null;
   openChatWithUser: (userId: string) => void;
@@ -105,9 +85,6 @@ export const useAppStore = create<AppState>((set) => ({
   activeTab: 'home',
   setActiveTab: (tab) => set({ activeTab: tab }),
 
-  circleFilter: 'For You',
-  setCircleFilter: (circle) => set({ circleFilter: circle }),
-
   theme: (typeof window !== 'undefined' && (localStorage.getItem('uniconnect_theme') as 'light' | 'dark')) || 'light',
   toggleTheme: () => set((state) => {
     const nextTheme = state.theme === 'light' ? 'dark' : 'light';
@@ -120,9 +97,6 @@ export const useAppStore = create<AppState>((set) => ({
 
   isCommandPaletteOpen: false,
   setCommandPaletteOpen: (open) => set({ isCommandPaletteOpen: open }),
-
-  isAIAssistantOpen: false,
-  setAIAssistantOpen: (open) => set({ isAIAssistantOpen: open }),
 
   isCreatePostOpen: false,
   setCreatePostOpen: (open) => set({ isCreatePostOpen: open }),
@@ -158,9 +132,6 @@ export const useAppStore = create<AppState>((set) => ({
     callRole: 'callee' as const,
     incomingCall: null,
   } : {}),
-
-  isVaultUnlocked: false,
-  setVaultUnlocked: (unlocked) => set({ isVaultUnlocked: unlocked }),
 
   pendingChatUserId: null,
   openChatWithUser: (userId) => set({ activeTab: 'chats', pendingChatUserId: userId }),

@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Search, Home, MessageSquare, Sparkles, Film, Users, Calendar, Clock, User, Settings, Shield, Compass, MessageCircle, Hash } from 'lucide-react';
+import { Search, Home, MessageCircle, Film, Compass, User, Settings, Bookmark, Hash } from 'lucide-react';
 import { useAppStore, NavTab } from '@/store/useAppStore';
 import { apiGet } from '@/lib/api';
 
 export const CommandPalette: React.FC = () => {
   const { isCommandPaletteOpen, setCommandPaletteOpen, setActiveTab, openChatWithUser } = useAppStore();
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<{ users: any[]; posts: any[]; communities: any[] }>({ users: [], posts: [], communities: [] });
+  const [results, setResults] = useState<{ users: any[]; posts: any[] }>({ users: [], posts: [] });
   const [isSearching, setIsSearching] = useState(false);
 
   // Handle Ctrl+K keyboard shortcut
@@ -26,7 +26,7 @@ export const CommandPalette: React.FC = () => {
   // Debounced live search
   useEffect(() => {
     if (!query.trim()) {
-      setResults({ users: [], posts: [], communities: [] });
+      setResults({ users: [], posts: [] });
       return;
     }
     const handle = setTimeout(async () => {
@@ -34,7 +34,7 @@ export const CommandPalette: React.FC = () => {
         setIsSearching(true);
         const data = await apiGet(`/api/search?q=${encodeURIComponent(query.trim())}`);
         if (data.success) {
-          setResults({ users: data.users || [], posts: data.posts || [], communities: data.communities || [] });
+          setResults({ users: data.users || [], posts: data.posts || [] });
         }
       } catch (err) {
         console.error('Search failed:', err);
@@ -47,18 +47,14 @@ export const CommandPalette: React.FC = () => {
 
   if (!isCommandPaletteOpen) return null;
 
-  const navItems: { label: string; tab: NavTab; icon: React.ElementType; category: string }[] = [
-    { label: 'Go to Home Feed', tab: 'home', icon: Home, category: 'Navigation' },
-    { label: 'Open Chats & Messages', tab: 'chats', icon: MessageSquare, category: 'Navigation' },
-    { label: 'View Stories 2.0', tab: 'stories', icon: Sparkles, category: 'Navigation' },
-    { label: 'Watch Reels Feed', tab: 'reels', icon: Film, category: 'Navigation' },
-    { label: 'Explore Communities & Voice Rooms', tab: 'communities', icon: Users, category: 'Navigation' },
-    { label: 'Explore & Trending', tab: 'explore', icon: Compass, category: 'Navigation' },
-    { label: 'Event Planner & Split Expenses', tab: 'events', icon: Calendar, category: 'Navigation' },
-    { label: 'Digital Diary & Memories', tab: 'memories', icon: Clock, category: 'Personal' },
-    { label: 'Open Profile Page & Vault', tab: 'profile', icon: User, category: 'Personal' },
-    { label: 'Application Settings', tab: 'settings', icon: Settings, category: 'System' },
-    { label: 'Local Admin Moderation Panel', tab: 'admin', icon: Shield, category: 'System' },
+  const navItems: { label: string; tab: NavTab; icon: React.ElementType }[] = [
+    { label: 'Home', tab: 'home', icon: Home },
+    { label: 'Explore', tab: 'explore', icon: Compass },
+    { label: 'Reels', tab: 'reels', icon: Film },
+    { label: 'Messages', tab: 'chats', icon: MessageCircle },
+    { label: 'Saved', tab: 'saved', icon: Bookmark },
+    { label: 'Profile', tab: 'profile', icon: User },
+    { label: 'Settings', tab: 'settings', icon: Settings },
   ];
 
   const filteredNav = query.trim()
@@ -83,13 +79,7 @@ export const CommandPalette: React.FC = () => {
     setQuery('');
   };
 
-  const handleSelectCommunity = () => {
-    setActiveTab('communities');
-    setCommandPaletteOpen(false);
-    setQuery('');
-  };
-
-  const hasSearchResults = results.users.length > 0 || results.posts.length > 0 || results.communities.length > 0;
+  const hasSearchResults = results.users.length > 0 || results.posts.length > 0;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-start justify-center pt-20 p-4 animate-in fade-in duration-150 select-none">
@@ -102,7 +92,7 @@ export const CommandPalette: React.FC = () => {
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search people, posts, communities, or type a command..."
+            placeholder="Search"
             className="w-full bg-transparent text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none"
           />
           <kbd className="px-2 py-0.5 text-xs bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-md">ESC</kbd>
@@ -120,30 +110,16 @@ export const CommandPalette: React.FC = () => {
                 <div
                   key={u._id}
                   onClick={() => handleSelectUser(u._id)}
-                  className="flex items-center justify-between p-3 rounded-2xl hover:bg-blue-600 hover:text-white group cursor-pointer transition-all text-slate-700 dark:text-slate-200"
+                  className="flex items-center justify-between p-3 rounded-2xl hover:bg-blue-50 dark:hover:bg-slate-800 group cursor-pointer transition-all text-slate-700 dark:text-slate-200"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <img src={u.avatar} alt={u.name} className="w-7 h-7 rounded-full object-cover shrink-0" />
+                    <img src={u.avatar} alt={u.name} className="w-8 h-8 rounded-full object-cover shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-xs font-bold truncate">{u.name}</p>
-                      <p className="text-[10px] text-slate-400 group-hover:text-blue-100 truncate">@{u.username}</p>
+                      <p className="text-xs font-bold truncate">{u.username}</p>
+                      <p className="text-[10px] text-slate-400 truncate">{u.name}</p>
                     </div>
                   </div>
-                  <MessageCircle className="w-3.5 h-3.5 text-slate-400 group-hover:text-white shrink-0" />
-                </div>
-              ))}
-
-              {results.communities.map((c) => (
-                <div
-                  key={c._id}
-                  onClick={handleSelectCommunity}
-                  className="flex items-center justify-between p-3 rounded-2xl hover:bg-blue-600 hover:text-white group cursor-pointer transition-all text-slate-700 dark:text-slate-200"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <img src={c.icon} alt={c.name} className="w-7 h-7 rounded-xl object-cover shrink-0" />
-                    <p className="text-xs font-bold truncate">{c.name}</p>
-                  </div>
-                  <span className="text-[10px] font-bold text-slate-400 group-hover:text-blue-100 uppercase tracking-wider shrink-0">Community</span>
+                  <MessageCircle className="w-4 h-4 text-slate-400 shrink-0" />
                 </div>
               ))}
 
@@ -151,21 +127,20 @@ export const CommandPalette: React.FC = () => {
                 <div
                   key={p._id}
                   onClick={handleSelectPost}
-                  className="flex items-center justify-between p-3 rounded-2xl hover:bg-blue-600 hover:text-white group cursor-pointer transition-all text-slate-700 dark:text-slate-200"
+                  className="flex items-center justify-between p-3 rounded-2xl hover:bg-blue-50 dark:hover:bg-slate-800 group cursor-pointer transition-all text-slate-700 dark:text-slate-200"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <Hash className="w-4 h-4 text-slate-400 group-hover:text-white shrink-0" />
+                    <Hash className="w-4 h-4 text-slate-400 shrink-0" />
                     <div className="min-w-0">
                       <p className="text-xs font-bold truncate">{p.userName}</p>
-                      <p className="text-[10px] text-slate-400 group-hover:text-blue-100 truncate">{p.content}</p>
+                      <p className="text-[10px] text-slate-400 truncate">{p.content}</p>
                     </div>
                   </div>
-                  <span className="text-[10px] font-bold text-slate-400 group-hover:text-blue-100 uppercase tracking-wider shrink-0">Post</span>
                 </div>
               ))}
 
               {!isSearching && !hasSearchResults && (
-                <p className="px-3 py-2 text-[11px] font-bold text-slate-400">No people, posts, or communities found.</p>
+                <p className="px-3 py-2 text-[11px] font-bold text-slate-400">No results found.</p>
               )}
             </div>
           )}
@@ -176,15 +151,10 @@ export const CommandPalette: React.FC = () => {
               <div
                 key={idx}
                 onClick={() => handleSelectTab(item.tab)}
-                className="flex items-center justify-between p-3 rounded-2xl hover:bg-blue-600 hover:text-white group cursor-pointer transition-all text-slate-700 dark:text-slate-200"
+                className="flex items-center gap-3 p-3 rounded-2xl hover:bg-blue-50 dark:hover:bg-slate-800 cursor-pointer transition-all text-slate-700 dark:text-slate-200"
               >
-                <div className="flex items-center gap-3">
-                  <Icon className="w-4 h-4 text-slate-400 group-hover:text-white" />
-                  <span className="text-xs font-semibold">{item.label}</span>
-                </div>
-                <span className="text-[10px] font-bold text-slate-400 group-hover:text-blue-100 uppercase tracking-wider">
-                  {item.category}
-                </span>
+                <Icon className="w-4 h-4 text-slate-400" />
+                <span className="text-xs font-semibold">{item.label}</span>
               </div>
             );
           })}

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">UniConnect</string>
+    <string name="title_activity_main">UniConnect</string>
+    <string name="package_name">com.uniconnect.app</string>
+    <string name="custom_url_scheme">com.uniconnect.app</string>
+</resources>

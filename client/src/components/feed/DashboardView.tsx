@@ -1,41 +1,32 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { 
-  Plus, 
-  Image as ImageIcon, 
-  Video, 
-  Mic, 
-  Smile, 
-  BarChart2, 
-  Calendar, 
-  ChevronDown, 
-  Heart, 
-  MessageCircle, 
-  Share2, 
-  Bookmark, 
-  Sparkles, 
-  MoreHorizontal, 
-  SlidersHorizontal,
+import {
+  Plus,
+  Image as ImageIcon,
+  Video,
+  Mic,
+  Smile,
+  Heart,
+  MessageCircle,
+  Share2,
+  Bookmark,
+  Sparkles,
+  MoreHorizontal,
   CheckCircle2,
-  Bot,
   Send,
   Pin,
-  Trash2,
   Copy,
-  EyeOff,
-  Flag
+  EyeOff
 } from 'lucide-react';
-import { useAppStore, CircleFilter } from '@/store/useAppStore';
+import { useAppStore } from '@/store/useAppStore';
 import { CreatePostModal } from './CreatePostModal';
 import { CreateStoryModal } from '../stories/CreateStoryModal';
 import { StoryViewerModal } from '../stories/StoryViewerModal';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 
-const REPORT_REASONS = ['Spam', 'Harassment', 'Inappropriate', 'Other'];
-
 export const DashboardView: React.FC = () => {
-  const { circleFilter, setCircleFilter, setCreatePostOpen, setAIAssistantOpen, user } = useAppStore();
+  const { setCreatePostOpen, user } = useAppStore();
   const [posts, setPosts] = useState<any[]>([]);
   const [stories, setStories] = useState<any[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
@@ -53,7 +44,6 @@ export const DashboardView: React.FC = () => {
   const [postComments, setPostComments] = useState<Record<string, any[]>>({});
   const [savedPostIds, setSavedPostIds] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [reportingPostId, setReportingPostId] = useState<string | null>(null);
 
   // Dynamic Time of Day Greeting
   const getGreeting = () => {
@@ -71,7 +61,7 @@ export const DashboardView: React.FC = () => {
   const fetchPosts = async () => {
     try {
       setIsLoadingPosts(true);
-      const data = await apiGet(`/api/posts?circle=${encodeURIComponent(circleFilter)}`);
+      const data = await apiGet('/api/posts');
       if (data.success && data.posts) {
         setPosts(data.posts);
       }
@@ -111,7 +101,7 @@ export const DashboardView: React.FC = () => {
     fetchPosts();
     fetchStories();
     fetchSaved();
-  }, [circleFilter]);
+  }, []);
 
   const handleLikeToggle = async (postId: string) => {
     try {
@@ -208,25 +198,8 @@ export const DashboardView: React.FC = () => {
     }
   };
 
-  const handleReportPost = async (postId: string, reason: string) => {
-    try {
-      const data = await apiPost('/api/reports', { targetType: 'post', targetId: postId, reason });
-      if (data.success) {
-        showToast('Post reported. Our team will review it.');
-      } else {
-        showToast('Something went wrong. Please try again.');
-      }
-    } catch (err) {
-      console.error('Failed to report post:', err);
-      showToast('Something went wrong. Please try again.');
-    } finally {
-      setReportingPostId(null);
-      setActiveMenuPostId(null);
-    }
-  };
-
   const handleSharePost = (postId: string) => {
-    navigator.clipboard?.writeText?.(`http://localhost:3000/posts/${postId}`);
+    navigator.clipboard?.writeText?.(`${window.location.origin}/posts/${postId}`);
     showToast('Post link copied to clipboard! 🔗');
   };
 
@@ -234,8 +207,6 @@ export const DashboardView: React.FC = () => {
     setSelectedStory(story);
     setIsStoryViewerOpen(true);
   };
-
-  const categories: CircleFilter[] = ['For You', 'Friends', 'Family', 'College', 'Work', 'Gaming', 'Travel'];
 
   return (
     <div className="space-y-4 max-w-4xl mx-auto pb-12 relative">
@@ -265,13 +236,13 @@ export const DashboardView: React.FC = () => {
         </button>
       </div>
 
-      {/* Stories 2.0 Carousel Bar */}
+      {/* Stories Carousel Bar */}
       <div className="flex items-center gap-3 overflow-x-auto py-1 scrollbar-none">
         {/* Your Story trigger */}
         {(() => {
           const myStory = stories.find(s => s.user?.name === user?.name || s.userName === user?.name);
           return (
-            <div 
+            <div
               onClick={() => {
                 if (myStory) {
                   handleStoryClick(myStory);
@@ -284,7 +255,7 @@ export const DashboardView: React.FC = () => {
               <div className="relative">
                 <div className={`w-14 h-14 rounded-full p-[2px] transition-transform group-hover:scale-105 ${
                   myStory
-                    ? 'bg-gradient-to-tr from-yellow-500 via-rose-500 to-blue-600'
+                    ? 'story-avatar-ring'
                     : 'bg-slate-200 dark:bg-slate-700'
                 }`}>
                   <img
@@ -302,21 +273,20 @@ export const DashboardView: React.FC = () => {
                 </div>
               </div>
               <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate max-w-[64px]">Your Story</span>
-              <span className="text-[9px] text-slate-400 font-medium">{myStory ? 'Active ⚡' : 'Add content'}</span>
             </div>
           );
         })()}
 
         {/* Live Stories Stream with Hover Preview Card */}
         {stories.map((story, idx) => (
-          <div 
-            key={idx} 
+          <div
+            key={idx}
             onClick={() => handleStoryClick(story)}
             onMouseEnter={() => setHoveredStoryId(story._id || `story_${idx}`)}
             onMouseLeave={() => setHoveredStoryId(null)}
             className="flex flex-col items-center gap-1 min-w-[68px] cursor-pointer group relative"
           >
-            <div className="w-14 h-14 rounded-full p-[2px] bg-gradient-to-tr from-blue-600 via-cyan-500 to-blue-400 transition-transform group-hover:scale-105">
+            <div className="w-14 h-14 rounded-full p-[2px] story-avatar-ring transition-transform group-hover:scale-105">
               <img
                 src={story.user?.avatar || story.userAvatar || "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=300"}
                 alt={story.user?.name || story.userName}
@@ -324,14 +294,13 @@ export const DashboardView: React.FC = () => {
               />
             </div>
             <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate max-w-[64px]">{story.user?.name || story.userName}</span>
-            <span className="text-[9px] text-slate-400 font-medium">2h ago</span>
 
             {/* Hover Floating Card Preview */}
             {hoveredStoryId === (story._id || `story_${idx}`) && (
               <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-44 p-2 bg-slate-900/90 text-white rounded-2xl border border-slate-700 shadow-lg z-30 pointer-events-none animate-in fade-in zoom-in-95 duration-150 text-center">
-                <img 
-                  src={story.mediaUrl || story.media || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&q=80&w=600"} 
-                  alt="Story preview" 
+                <img
+                  src={story.mediaUrl || story.media || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&q=80&w=600"}
+                  alt="Story preview"
                   className="w-full h-24 object-cover rounded-xl mb-1.5"
                 />
                 <p className="text-[11px] font-bold truncate">{story.user?.name || story.userName}</p>
@@ -376,14 +345,6 @@ export const DashboardView: React.FC = () => {
               <Smile className="w-3.5 h-3.5 text-amber-500" />
               <span>Feeling</span>
             </button>
-            <button onClick={() => setCreatePostOpen(true)} className="flex items-center gap-1 hover:text-blue-600 transition-colors">
-              <BarChart2 className="w-3.5 h-3.5 text-sky-500" />
-              <span>Poll</span>
-            </button>
-            <button onClick={() => setCreatePostOpen(true)} className="flex items-center gap-1 hover:text-blue-600 transition-colors">
-              <Calendar className="w-3.5 h-3.5 text-rose-500" />
-              <span>Event</span>
-            </button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -397,28 +358,6 @@ export const DashboardView: React.FC = () => {
         </div>
       </div>
 
-      {/* Circle Category Filter Tabs */}
-      <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1">
-        <div className="flex items-center gap-1.5">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setCircleFilter(cat)}
-              className={`px-3.5 py-1.5 rounded-xl text-[11px] font-bold transition-all whitespace-nowrap ${
-                circleFilter === cat
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-        <button className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 shrink-0">
-          <SlidersHorizontal className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
       {/* Dynamic Feed Posts */}
       {isLoadingPosts ? (
         <div className="p-6 text-center text-xs font-bold text-slate-400 animate-pulse">
@@ -427,8 +366,8 @@ export const DashboardView: React.FC = () => {
       ) : posts.length === 0 ? (
         <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-center space-y-2.5">
           <Sparkles className="w-7 h-7 text-blue-500 mx-auto" />
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white">No posts in {circleFilter} circle yet</h3>
-          <p className="text-xs text-slate-400">Be the first to create a post in this category!</p>
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white">No posts yet</h3>
+          <p className="text-xs text-slate-400">Be the first to share something!</p>
           <button
             onClick={() => setCreatePostOpen(true)}
             className="py-1.5 px-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-sm"
@@ -459,24 +398,16 @@ export const DashboardView: React.FC = () => {
                       <h3 className="text-sm font-bold text-slate-900 dark:text-white">{post.user?.name || post.userName}</h3>
                       {post.isVerified && <CheckCircle2 className="w-4 h-4 text-blue-500 fill-blue-500/20" />}
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                      <span>Recent</span>
-                      <span>•</span>
-                      <span>{post.circle || 'For You'}</span>
-                      {post.location && (
-                        <>
-                          <span>•</span>
-                          <span>{post.location}</span>
-                        </>
-                      )}
-                    </p>
+                    {post.location && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{post.location}</p>
+                    )}
                   </div>
                 </div>
 
                 {/* 3-Dots Action Menu Trigger */}
                 <div className="relative">
                   <button
-                    onClick={() => { setActiveMenuPostId(isMenuOpen ? null : post._id); setReportingPostId(null); }}
+                    onClick={() => setActiveMenuPostId(isMenuOpen ? null : post._id)}
                     className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 transition-colors"
                   >
                     <MoreHorizontal className="w-5 h-5" />
@@ -485,14 +416,14 @@ export const DashboardView: React.FC = () => {
                   {/* 3-Dots Interactive Dropdown */}
                   {isMenuOpen && (
                     <div className="absolute right-0 top-8 w-44 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-lg p-1.5 z-30 text-xs font-semibold text-slate-700 dark:text-slate-200 space-y-1 animate-in fade-in duration-100">
-                      <button 
+                      <button
                         onClick={() => { handleToggleSave(post._id); setActiveMenuPostId(null); }}
                         className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-left"
                       >
                         <Bookmark className="w-4 h-4 text-blue-500" />
                         <span>{isSaved ? 'Unsave Post' : 'Save Post'}</span>
                       </button>
-                      <button 
+                      <button
                         onClick={() => { handleSharePost(post._id); setActiveMenuPostId(null); }}
                         className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-left"
                       >
@@ -513,30 +444,6 @@ export const DashboardView: React.FC = () => {
                         <EyeOff className="w-4 h-4" />
                         <span>Hide Post</span>
                       </button>
-                      {reportingPostId === post._id ? (
-                        <div className="px-2 py-1.5 space-y-1.5">
-                          <p className="px-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Report reason</p>
-                          <div className="flex flex-wrap gap-1">
-                            {REPORT_REASONS.map((reason) => (
-                              <button
-                                key={reason}
-                                onClick={() => handleReportPost(post._id, reason)}
-                                className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-rose-50 dark:bg-rose-950 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900 transition-colors"
-                              >
-                                {reason}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setReportingPostId(post._id)}
-                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950 text-rose-500 text-left"
-                        >
-                          <Flag className="w-4 h-4" />
-                          <span>Report Post</span>
-                        </button>
-                      )}
                     </div>
                   )}
                 </div>
@@ -550,9 +457,9 @@ export const DashboardView: React.FC = () => {
               {/* Media if present */}
               {post.media && post.media.length > 0 && (
                 <div className="rounded-2xl overflow-hidden border border-slate-200/60 dark:border-slate-800 shadow-sm">
-                  <img 
-                    src={post.media[0]} 
-                    alt="Post media" 
+                  <img
+                    src={post.media[0]}
+                    alt="Post media"
                     className="w-full max-h-[420px] object-cover hover:scale-[1.01] transition-transform duration-300"
                   />
                 </div>
@@ -561,7 +468,7 @@ export const DashboardView: React.FC = () => {
               {/* Reactions & Engagement Row */}
               <div className="flex items-center justify-between pt-1 text-xs font-bold text-slate-600 dark:text-slate-400">
                 <div className="flex items-center gap-4">
-                  <button 
+                  <button
                     onClick={() => handleLikeToggle(post._id)}
                     className={`flex items-center gap-1.5 transition-colors ${isLiked ? 'text-rose-500' : 'hover:text-rose-500'}`}
                   >
@@ -577,7 +484,7 @@ export const DashboardView: React.FC = () => {
                     <span>{post.commentsCount || 0}</span>
                   </button>
 
-                  <button 
+                  <button
                     onClick={() => handleSharePost(post._id)}
                     className="flex items-center gap-1.5 hover:text-blue-600 transition-colors"
                   >
@@ -586,7 +493,7 @@ export const DashboardView: React.FC = () => {
                   </button>
                 </div>
 
-                <button 
+                <button
                   onClick={() => handleToggleSave(post._id)}
                   className={`p-1 rounded-full transition-colors ${isSaved ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'}`}
                 >
@@ -608,15 +515,15 @@ export const DashboardView: React.FC = () => {
                   )}
 
                   <div className="flex items-center gap-2">
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       value={commentInputs[post._id] || ''}
                       onChange={(e) => setCommentInputs({ ...commentInputs, [post._id]: e.target.value })}
                       onKeyDown={(e) => e.key === 'Enter' && handleAddComment(post._id)}
                       placeholder="Write a comment..."
                       className="flex-1 px-3 py-2 bg-white dark:bg-slate-800 rounded-xl text-xs text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 focus:outline-none"
                     />
-                    <button 
+                    <button
                       onClick={() => handleAddComment(post._id)}
                       className="p-2 bg-blue-600 text-white rounded-xl shadow-sm hover:bg-blue-700"
                     >
@@ -633,12 +540,12 @@ export const DashboardView: React.FC = () => {
 
       {/* Interactive Modals */}
       <CreatePostModal onPostCreated={fetchPosts} />
-      <CreateStoryModal 
+      <CreateStoryModal
         isOpen={isStoryCreateOpen}
         onClose={() => setIsStoryCreateOpen(false)}
         onStoryCreated={() => fetchStories(true)}
       />
-      <StoryViewerModal 
+      <StoryViewerModal
         story={selectedStory}
         isOpen={isStoryViewerOpen}
         onClose={() => setIsStoryViewerOpen(false)}

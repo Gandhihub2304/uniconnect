@@ -18,14 +18,24 @@ router.get('/', authMiddleware, async (req: AuthRequest, res) => {
         if (!chat.isGroup) {
           const otherParticipantId = chat.participants.find((pid: string) => pid !== req.user.id);
           if (otherParticipantId) {
-            const otherUser = await UserModel.findById(otherParticipantId).select('username name avatar');
+            const otherUser = await UserModel.findById(otherParticipantId).select('username name avatar isOnline lastSeen');
             if (otherUser) {
               chatObj.username = otherUser.username;
               chatObj.name = otherUser.name;
               chatObj.avatar = otherUser.avatar;
+              chatObj.otherUserId = otherParticipantId;
+              chatObj.isOnline = otherUser.isOnline;
+              chatObj.lastSeen = otherUser.lastSeen;
             }
           }
         }
+        const unreadCount = await MessageModel.countDocuments({
+          chatId: chat._id,
+          senderId: { $ne: req.user.id },
+          readBy: { $ne: req.user.id },
+          deletedFor: { $ne: req.user.id },
+        });
+        chatObj.unread = unreadCount;
         return chatObj;
       })
     );
@@ -96,6 +106,26 @@ router.delete('/:chatId/clear', authMiddleware, async (req: AuthRequest, res) =>
     res.json({ success: true, message: 'Chat history cleared for both participants' });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message || 'Error clearing chat history' });
+  }
+});
+
+// Mark all messages in a chat as read by the current user (read receipts)
+router.put('/:chatId/read', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const chatId = req.params.chatId;
+    await MessageModel.updateMany(
+      { chatId, senderId: { $ne: req.user.id }, readBy: { $ne: req.user.id } },
+      { $addToSet: { readBy: req.user.id } }
+    );
+
+    const io = getIO();
+    if (io) {
+      io.to(`chat_${chatId}`).emit('messages_read', { chatId, readerId: req.user.id });
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message || 'Error marking messages as read' });
   }
 });
 

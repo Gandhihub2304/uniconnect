@@ -27,7 +27,9 @@ import {
   Edit3,
   Trash2,
   Smile,
-  Check
+  Check,
+  Reply,
+  CornerUpLeft
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { apiGet, apiPost, apiPut, apiDelete, apiUpload } from '@/lib/api';
@@ -67,6 +69,15 @@ export const ChatView: React.FC = () => {
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
 
+  // Reply-to-message state
+  const [replyingTo, setReplyingTo] = useState<any | null>(null);
+
+  // Presence / typing indicator state
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [typingUserName, setTypingUserName] = useState<string | null>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTypingEmitRef = useRef<number>(0);
+
   const [chats, setChats] = useState<any[]>([]);
   const [isLoadingChats, setIsLoadingChats] = useState(true);
   const [messages, setMessages] = useState<Record<string, any[]>>({});
@@ -86,12 +97,25 @@ export const ChatView: React.FC = () => {
           name: c.name || 'Chat',
           username: c.username || 'user',
           avatar: c.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
-          status: 'Online',
-          lastSeen: 'Active now',
-          unread: 0,
+          otherUserId: c.otherUserId,
+          isOnline: !!c.isOnline,
+          lastSeen: c.lastSeen,
+          lastMessage: c.lastMessage || '',
+          lastMessageTime: c.lastMessageTime,
+          unread: c.unread || 0,
           isFriend: true
         }));
         setChats(formattedChats);
+        setOnlineUserIds(prev => {
+          const next = new Set(prev);
+          formattedChats.forEach((c: any) => {
+            if (c.otherUserId) {
+              if (c.isOnline) next.add(c.otherUserId);
+              else next.delete(c.otherUserId);
+            }
+          });
+          return next;
+        });
         if (formattedChats.length > 0 && !activeChatId) {
           setActiveChatId(formattedChats[0].id);
         }
@@ -156,6 +180,8 @@ export const ChatView: React.FC = () => {
               expiresAt: expiresAtMs,
               ttl: remainingTtl,
               disappearingTimer: m.disappearingTimer || 'off',
+              replyToId: m.replyToId,
+              readBy: m.readBy || [],
               time: new Date(m.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               isMe: String(m.senderId) === myId,
             };
@@ -171,6 +197,14 @@ export const ChatView: React.FC = () => {
 
     fetchMessages();
   }, [activeChatId, user?._id]);
+
+  // Mark messages as read whenever the active chat is opened / receives new messages
+  useEffect(() => {
+    if (!activeChatId) return;
+    apiPut(`/api/chats/${activeChatId}/read`, {}).then(() => {
+      setChats(prev => prev.map(c => c.id === activeChatId ? { ...c, unread: 0 } : c));
+    }).catch(() => {});
+  }, [activeChatId, activeMessages.length]);
 
   // Real-time socket events for dynamic instant updates
   useEffect(() => {
@@ -289,6 +323,32 @@ export const ChatView: React.FC = () => {
       setMessages(prev => ({ ...prev, [data.chatId]: [] }));
     };
 
+    const handleMessagesRead = (data: { chatId: string; readerId: string }) => {
+      if (data.chatId !== activeChatId) return;
+      setMessages(prev => {
+        const existing = prev[activeChatId] || [];
+        return {
+          ...prev,
+          [activeChatId]: existing.map(m =>
+            m.isMe && !(m.readBy || []).includes(data.readerId)
+              ? { ...m, readBy: [...(m.readBy || []), data.readerId] }
+              : m
+          ),
+        };
+      });
+    };
+
+    const handleUserTyping = (data: { chatId: string; userName: string; isTyping: boolean }) => {
+      if (data.chatId !== activeChatId) return;
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (data.isTyping) {
+        setTypingUserName(data.userName);
+        typingTimeoutRef.current = setTimeout(() => setTypingUserName(null), 3000);
+      } else {
+        setTypingUserName(null);
+      }
+    };
+
     socket.on('new_message', handleNewMsg);
     socket.on('view_once_opened', handleViewOnceOpened);
     socket.on('message_edited', handleMsgEdited);
@@ -296,6 +356,8 @@ export const ChatView: React.FC = () => {
     socket.on('message_reacted', handleMsgReacted);
     socket.on('disappearing_timer_updated', handleDisappearingTimerUpdated);
     socket.on('chat_cleared', handleChatCleared);
+    socket.on('messages_read', handleMessagesRead);
+    socket.on('user_typing', handleUserTyping);
 
     return () => {
       socket.emit('leave_chat', activeChatId);
@@ -306,8 +368,48 @@ export const ChatView: React.FC = () => {
       socket.off('message_reacted', handleMsgReacted);
       socket.off('disappearing_timer_updated', handleDisappearingTimerUpdated);
       socket.off('chat_cleared', handleChatCleared);
+      socket.off('messages_read', handleMessagesRead);
+      socket.off('user_typing', handleUserTyping);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     };
   }, [activeChatId, user?._id]);
+
+  // Global presence listener (independent of active chat) to keep chat-list online dots live
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+    const handlePresence = (data: { userId: string; isOnline: boolean }) => {
+      setOnlineUserIds(prev => {
+        const next = new Set(prev);
+        if (data.isOnline) next.add(data.userId);
+        else next.delete(data.userId);
+        return next;
+      });
+    };
+    const handleChatUpdated = (data: { chatId: string; lastMessage: string; lastMessageTime: string }) => {
+      setChats(prev => prev.map(c => c.id === data.chatId
+        ? { ...c, lastMessage: data.lastMessage, lastMessageTime: data.lastMessageTime }
+        : c
+      ));
+      if (data.chatId !== activeChatId) {
+        // Re-fetch to get an accurate unread count for the affected chat (sender-side self-updates net to 0)
+        apiGet('/api/chats').then(res => {
+          if (res.success && res.chats) {
+            const match = res.chats.find((c: any) => c._id === data.chatId);
+            if (match) {
+              setChats(prev => prev.map(c => c.id === data.chatId ? { ...c, unread: match.unread || 0 } : c));
+            }
+          }
+        }).catch(() => {});
+      }
+    };
+    socket.on('presence_update', handlePresence);
+    socket.on('chat_updated', handleChatUpdated);
+    return () => {
+      socket.off('presence_update', handlePresence);
+      socket.off('chat_updated', handleChatUpdated);
+    };
+  }, [activeChatId]);
 
   const scrollToBottom = (smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
@@ -376,7 +478,9 @@ export const ChatView: React.FC = () => {
 
     const expiresAt = disappearingTimer === '10s' ? Date.now() + 10000 : null;
     const sendText = inputText;
+    const replyTo = replyingTo;
     setInputText('');
+    setReplyingTo(null);
 
     const optimisticMsg = {
       id: Date.now().toString(),
@@ -387,7 +491,9 @@ export const ChatView: React.FC = () => {
       isMe: true,
       expiresAt,
       ttl: disappearingTimer === '10s' ? 10 : null,
-      timerType: disappearingTimer
+      timerType: disappearingTimer,
+      replyToId: replyTo?.id,
+      replyPreview: replyTo ? { sender: replyTo.sender, text: replyTo.text, isMe: replyTo.isMe } : null,
     };
 
     setMessages(prev => ({
@@ -396,7 +502,7 @@ export const ChatView: React.FC = () => {
     }));
 
     try {
-      const res = await apiPost(`/api/chats/${activeChatId}/messages`, { text: sendText, disappearingTimer });
+      const res = await apiPost(`/api/chats/${activeChatId}/messages`, { text: sendText, disappearingTimer, replyToId: replyTo?.id });
       if (res.success && res.message) {
         const realId = res.message._id || res.message.id;
         setMessages(prev => {
@@ -719,6 +825,19 @@ export const ChatView: React.FC = () => {
     }
   };
 
+  // Emit typing indicator, throttled to avoid flooding the socket
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInputText(e.target.value);
+    if (!activeChatId || !user) return;
+    const socket = getSocket();
+    if (!socket) return;
+    const now = Date.now();
+    if (now - lastTypingEmitRef.current > 1500) {
+      lastTypingEmitRef.current = now;
+      socket.emit('typing', { chatId: activeChatId, userName: user.name, isTyping: true });
+    }
+  };
+
   const handleVoiceRecordToggle = () => {
     if (!activeChatId) return;
     if (isRecordingVoice) {
@@ -750,6 +869,24 @@ export const ChatView: React.FC = () => {
     c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     c.username.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const formatRelativeTime = (dateStr?: string | number | Date) => {
+    if (!dateStr) return '';
+    const diffMs = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'now';
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `${days}d`;
+    return new Date(dateStr).toLocaleDateString();
+  };
+
+  const findRepliedMessage = (replyToId?: string) => {
+    if (!replyToId) return null;
+    return activeMessages.find(m => m.id === replyToId) || null;
+  };
 
   const formatFileSize = (bytes?: number) => {
     if (!bytes) return '';
@@ -797,32 +934,50 @@ export const ChatView: React.FC = () => {
               <p className="text-[10px] text-slate-500 font-medium">Follow users to start a conversation!</p>
             </div>
           ) : (
-            filteredChats.map((c) => (
-              <div 
-                key={c.id}
-                onClick={() => setActiveChatId(c.id)}
-                className={`p-2.5 rounded-2xl cursor-pointer transition-all flex items-center justify-between ${
-                  activeChatId === c.id 
-                    ? 'bg-blue-600 text-white shadow-md' 
-                    : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <img src={c.avatar} alt={c.name} className="w-10 h-10 rounded-full object-cover" />
-                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900"></span>
+            filteredChats.map((c) => {
+              const isOnline = c.otherUserId ? onlineUserIds.has(c.otherUserId) : c.isOnline;
+              const hasUnread = (c.unread || 0) > 0 && activeChatId !== c.id;
+              return (
+                <div
+                  key={c.id}
+                  onClick={() => setActiveChatId(c.id)}
+                  className={`p-2.5 rounded-2xl cursor-pointer transition-all flex items-center justify-between gap-2 ${
+                    activeChatId === c.id
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="relative flex-shrink-0">
+                      <img src={c.avatar} alt={c.name} className="w-10 h-10 rounded-full object-cover" />
+                      {isOnline && (
+                        <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900"></span>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className={`text-xs truncate max-w-[130px] ${hasUnread ? 'font-black' : 'font-bold'} ${activeChatId === c.id ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                        {c.name}
+                      </h4>
+                      <p className={`text-[11px] truncate max-w-[150px] ${hasUnread ? 'font-bold' : 'font-medium'} ${activeChatId === c.id ? 'text-blue-100' : hasUnread ? 'text-slate-800 dark:text-slate-100' : 'text-slate-500 dark:text-slate-400'}`}>
+                        {c.lastMessage || `@${c.username}`}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className={`text-xs font-black truncate max-w-[120px] ${activeChatId === c.id ? 'text-white' : 'text-blue-600 dark:text-blue-400'}`}>
-                      @{c.username}
-                    </h4>
-                    <p className={`text-[11px] truncate max-w-[120px] ${activeChatId === c.id ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
-                      {c.name}
-                    </p>
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                    {c.lastMessageTime && (
+                      <span className={`text-[9px] font-semibold ${activeChatId === c.id ? 'text-blue-100' : 'text-slate-400'}`}>
+                        {formatRelativeTime(c.lastMessageTime)}
+                      </span>
+                    )}
+                    {hasUnread && (
+                      <span className="w-4 h-4 flex items-center justify-center bg-blue-600 text-white text-[9px] font-bold rounded-full">
+                        {c.unread > 9 ? '9+' : c.unread}
+                      </span>
+                    )}
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
@@ -842,13 +997,29 @@ export const ChatView: React.FC = () => {
             {/* Active Chat Header Bar (Static Top Bar) */}
             <div className="p-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between shadow-sm flex-shrink-0">
               <div className="flex items-center gap-3">
-                <img src={activeChat.avatar} alt={activeChat.name} className="w-10 h-10 rounded-full object-cover" />
+                <div className="relative">
+                  <img src={activeChat.avatar} alt={activeChat.name} className="w-10 h-10 rounded-full object-cover" />
+                  {(activeChat.otherUserId ? onlineUserIds.has(activeChat.otherUserId) : activeChat.isOnline) && (
+                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900"></span>
+                  )}
+                </div>
                 <div>
                   <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                     {activeChat.name}
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
                   </h3>
-                  <p className="text-[10px] text-slate-400 font-medium">@{activeChat.username} • Active now</p>
+                  <p className="text-[10px] text-slate-400 font-medium">
+                    @{activeChat.username} •{' '}
+                    {typingUserName ? (
+                      <span className="text-blue-500 font-bold">typing...</span>
+                    ) : (activeChat.otherUserId ? onlineUserIds.has(activeChat.otherUserId) : activeChat.isOnline) ? (
+                      'Active now'
+                    ) : activeChat.lastSeen ? (
+                      `Active ${formatRelativeTime(activeChat.lastSeen)} ago`
+                    ) : (
+                      'Offline'
+                    )}
+                  </p>
                 </div>
               </div>
 
@@ -942,6 +1113,9 @@ export const ChatView: React.FC = () => {
                   const myId = String(user?._id || '');
                   const hasViewedOnce = msg.isViewOnce && msg.viewedBy && msg.viewedBy.includes(myId);
                   const isEditingThis = editingMsgId === msg.id;
+                  const repliedMsg = msg.replyPreview || findRepliedMessage(msg.replyToId);
+                  const isLastMyMessage = msg.isMe && activeMessages.filter(m => m.isMe).slice(-1)[0]?.id === msg.id;
+                  const isSeen = msg.isMe && (msg.readBy || []).length > 0;
 
                   return (
                     <div 
@@ -977,6 +1151,13 @@ export const ChatView: React.FC = () => {
                                 ))}
                               </div>
                               <button
+                                onClick={() => { setReplyingTo(msg); setActiveMenuMsgId(null); }}
+                                className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                              >
+                                <CornerUpLeft className="w-3.5 h-3.5 text-blue-500" />
+                                <span>Reply</span>
+                              </button>
+                              <button
                                 onClick={() => handleDeleteForMe(msg.id)}
                                 className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
                               >
@@ -996,6 +1177,18 @@ export const ChatView: React.FC = () => {
                             : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-bl-none border border-slate-200 dark:border-slate-700'
                         }`}
                       >
+                        {/* QUOTED REPLY BLOCK */}
+                        {repliedMsg && !msg.isDeletedForEveryone && (
+                          <div className={`px-2.5 py-1.5 rounded-lg border-l-2 text-[10px] ${
+                            msg.isMe ? 'bg-white/15 border-white/50 text-blue-50' : 'bg-slate-100 dark:bg-slate-900 border-blue-400 text-slate-500 dark:text-slate-400'
+                          }`}>
+                            <p className="font-bold opacity-90">{repliedMsg.isMe ? 'You' : repliedMsg.sender}</p>
+                            <p className="truncate max-w-[220px] opacity-80">
+                              {repliedMsg.isViewOnce ? '📷 View Once Photo' : (repliedMsg.text || 'Media')}
+                            </p>
+                          </div>
+                        )}
+
                         {/* DELETED FOR EVERYONE */}
                         {msg.isDeletedForEveryone ? (
                           <div className="flex items-center gap-1.5 text-slate-400 italic text-xs py-0.5">
@@ -1141,8 +1334,11 @@ export const ChatView: React.FC = () => {
 
                         <div className={`flex items-center justify-end gap-1 text-[9px] ${msg.isMe ? 'text-blue-100' : 'text-slate-400'}`}>
                           <span>{msg.time}</span>
-                          {msg.isMe && <CheckCheck className="w-3 h-3 text-blue-200" />}
+                          {msg.isMe && <CheckCheck className={`w-3 h-3 ${isSeen ? 'text-white' : 'text-blue-200'}`} />}
                         </div>
+                        {isLastMyMessage && isSeen && (
+                          <p className="text-right text-[9px] text-blue-100 -mt-1">Seen</p>
+                        )}
                       </div>
 
                       {/* 3 Dots Menu Button for My / Right-Side Message */}
@@ -1170,6 +1366,15 @@ export const ChatView: React.FC = () => {
                                   </button>
                                 ))}
                               </div>
+
+                              {/* Reply option */}
+                              <button
+                                onClick={() => { setReplyingTo(msg); setActiveMenuMsgId(null); }}
+                                className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-left"
+                              >
+                                <CornerUpLeft className="w-3.5 h-3.5 text-blue-500" />
+                                <span>Reply</span>
+                              </button>
 
                               {/* Edit option */}
                               {!msg.isDeletedForEveryone && !msg.isViewOnce && (
@@ -1227,9 +1432,30 @@ export const ChatView: React.FC = () => {
               </button>
             )}
 
+            {/* Reply Quote Preview Bar */}
+            {replyingTo && (
+              <div className="mx-1 mb-1.5 px-3 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-between gap-2 border-l-4 border-blue-500 flex-shrink-0">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold text-blue-500">
+                    Replying to {replyingTo.isMe ? 'yourself' : replyingTo.sender}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-xs">
+                    {replyingTo.isViewOnce ? '📷 View Once Photo' : replyingTo.text || 'Media'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReplyingTo(null)}
+                  className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex-shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
             {/* Dynamic Message Form Input Bar (Static Bottom Bar) */}
             <form onSubmit={handleSendMessage} className="p-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center gap-2 shadow-sm relative flex-shrink-0">
-              <input 
+              <input
                 type="file" 
                 ref={chatFileRef}
                 onChange={handleChatFileChange}
@@ -1286,7 +1512,7 @@ export const ChatView: React.FC = () => {
               <input 
                 type="text" 
                 value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
+                onChange={handleInputChange}
                 placeholder={
                   isViewOnceSelected 
                     ? 'Send 1x View Once Photo...' 

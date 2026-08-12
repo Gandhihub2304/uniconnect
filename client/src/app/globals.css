@@ -11,9 +11,9 @@
   --bg-elevated:     #f8fafc;
   --bg-input:        #f8fafc;
 
-  --accent:          #2563eb;
-  --accent-hover:    #1d4ed8;
-  --accent-dim:      rgba(37, 99, 235, 0.08);
+  --accent:          #0095F6;
+  --accent-hover:    #1877C9;
+  --accent-dim:      rgba(0, 149, 246, 0.08);
   --accent-cyan:     #0891b2;
   --accent-success:  #10b981;
   --accent-danger:   #e11d48;
@@ -26,14 +26,15 @@
 
   --border-default:  #e2e8f0;
   --border-hover:    #cbd5e1;
-  --border-accent:   rgba(37, 99, 235, 0.35);
+  --border-accent:   rgba(0, 149, 246, 0.35);
 
-  --shadow-accent:   0 4px 20px rgba(37, 99, 235, 0.25);
+  --shadow-accent:   0 4px 20px rgba(0, 149, 246, 0.25);
   --shadow-card:     0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
   --shadow-elevated: 0 10px 30px -8px rgba(15, 23, 42, 0.15);
   --shadow-sm:       0 1px 2px rgba(15, 23, 42, 0.05);
 
-  --story-ring-gradient: linear-gradient(135deg, #f59e0b, #ef4444, #2563eb, #0891b2);
+  /* Instagram's real story-ring gradient */
+  --story-ring-gradient: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
 }
 
 /* Dark mode overrides (opt-in via the theme toggle) */
@@ -45,7 +46,7 @@
   --bg-elevated:    #1a2333;
   --bg-input:       #1a2333;
 
-  --accent-dim:     rgba(37, 99, 235, 0.16);
+  --accent-dim:     rgba(0, 149, 246, 0.16);
 
   --text-primary:   #f1f5f9;
   --text-secondary: #94a3b8;

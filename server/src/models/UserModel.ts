@@ -15,17 +15,10 @@ export interface IUserDocument extends Document {
   website?: string;
   work?: string;
   education?: string;
-  circles: string[];
   followers: string[];
   following: string[];
   isOnline: boolean;
   lastSeen: Date;
-  xp: number;
-  level: number;
-  streak: number;
-  badges: string[];
-  vaultPin: string;
-  geo?: { lat: number; lng: number };
   comparePassword(candidatePassword: string): Promise<boolean>;
   generateAuthToken(): string;
 }
@@ -43,17 +36,10 @@ const UserSchema = new Schema<IUserDocument>(
     website: { type: String, default: 'https://uniconnect.app' },
     work: { type: String, default: 'Software Engineer @ UniConnect' },
     education: { type: String, default: 'B.Tech Computer Science' },
-    circles: { type: [String], default: ['Friends', 'Family', 'College', 'Work', 'Gaming', 'Travel'] },
     followers: { type: [String], default: [] },
     following: { type: [String], default: [] },
     isOnline: { type: Boolean, default: true },
     lastSeen: { type: Date, default: Date.now },
-    xp: { type: Number, default: 2840 },
-    level: { type: Number, default: 14 },
-    streak: { type: Number, default: 12 },
-    badges: { type: [String], default: ['🚀 Early Adopter', '⚡ Power Creator', '🎯 Event Host'] },
-    vaultPin: { type: String, default: '1234' },
-    geo: { type: { lat: Number, lng: Number }, default: undefined },
   },
   { timestamps: true }
 );

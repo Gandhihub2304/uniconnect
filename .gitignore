@@ -5,3 +5,12 @@ uploads/
 *.log
 .env
 .env.local
+.env.production.local
+.env.*.local
+
+# Generated build files
+client/out/
+apk-dist/
+
+# TypeScript build info
+*.tsbuildinfo

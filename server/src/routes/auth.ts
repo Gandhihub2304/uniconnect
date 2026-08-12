@@ -9,7 +9,7 @@ const router = Router();
 // Sign Up / Register
 router.post('/signup', async (req, res) => {
   try {
-    const { name, username, email, password, avatar, bio, circles } = req.body;
+    const { name, username, email, password, avatar, bio } = req.body;
 
     if (!name || !username || !email || !password) {
       return res.status(400).json({ success: false, message: 'Please provide all required fields (Name, Username, Email, Password)' });
@@ -32,7 +32,6 @@ router.post('/signup', async (req, res) => {
       password,
       avatar: avatar || undefined,
       bio: bio || undefined,
-      circles: circles || undefined,
     });
 
     await user.save();
@@ -161,7 +160,7 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res) => {
 // Update profile
 router.put('/profile', authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const allowed = ['name', 'bio', 'avatar', 'coverImage', 'location', 'website', 'work', 'education', 'circles', 'geo'];
+    const allowed = ['name', 'bio', 'avatar', 'coverImage', 'location', 'website', 'work', 'education'];
     const updates: Record<string, any> = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -177,7 +176,7 @@ router.put('/profile', authMiddleware, async (req: AuthRequest, res) => {
 // Update settings / security
 router.put('/settings', authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const { currentPassword, newPassword, vaultPin } = req.body;
+    const { currentPassword, newPassword } = req.body;
     const user = await UserModel.findById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
@@ -187,7 +186,6 @@ router.put('/settings', authMiddleware, async (req: AuthRequest, res) => {
       }
       user.password = newPassword;
     }
-    if (vaultPin) user.vaultPin = vaultPin;
 
     await user.save();
     const userObject = user.toObject();
@@ -195,21 +193,6 @@ router.put('/settings', authMiddleware, async (req: AuthRequest, res) => {
     res.json({ success: true, user: userObject });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message || 'Error updating settings' });
-  }
-});
-
-// Verify Vault PIN
-router.post('/vault/verify', authMiddleware, async (req: AuthRequest, res) => {
-  try {
-    const { pin } = req.body;
-    const user = await UserModel.findById(req.user.id);
-    if (user && pin === (user.vaultPin || '1234')) {
-      res.json({ success: true, unlocked: true });
-    } else {
-      res.status(401).json({ success: false, message: 'Invalid Vault PIN Code' });
-    }
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message || 'Error verifying PIN' });
   }
 });
 

@@ -28,6 +28,7 @@ export default function Home() {
   const { isAuthenticated, activeTab, login, logout, token } = useAppStore();
   const [authView, setAuthView] = useState<'login' | 'signup'>('login');
   const [isMounted, setIsMounted] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
     setIsMounted(true);
@@ -35,6 +36,7 @@ export default function Home() {
     const savedToken = localStorage.getItem('uniconnect_token');
     if (!savedToken) {
       logout();
+      setIsCheckingAuth(false);
       return;
     }
     apiGet('/api/auth/me')
@@ -42,7 +44,8 @@ export default function Home() {
         if (data.success) login(data.user, savedToken);
         else logout();
       })
-      .catch(() => logout());
+      .catch(() => logout())
+      .finally(() => setIsCheckingAuth(false));
   }, []);
 
   useEffect(() => {
@@ -52,8 +55,9 @@ export default function Home() {
     }
   }, [isAuthenticated, token]);
 
-  // Prevent SSR hydration mismatch
-  if (!isMounted) {
+  // Prevent SSR hydration mismatch, and avoid a login-page flash while we're
+  // still verifying a saved token against the server on cold start.
+  if (!isMounted || isCheckingAuth) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-slate-50">
         <div

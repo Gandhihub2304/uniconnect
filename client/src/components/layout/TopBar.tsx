@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Search, Sun, Moon, MessageSquare, Bell } from 'lucide-react';
+import { Search, Sun, Moon, MessageSquare, Heart } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { NotificationDrawer } from '../notifications/NotificationDrawer';
 import { apiGet } from '@/lib/api';
@@ -133,7 +133,7 @@ export const TopBar: React.FC = () => {
             onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-input)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >
-            <Bell className="w-4 h-4" />
+            <Heart className="w-4 h-4" />
             {unreadNotifications > 0 && (
               <span
                 className="absolute top-1 right-1 min-w-[14px] h-3.5 px-0.5 text-[9px] font-black rounded-full flex items-center justify-center"

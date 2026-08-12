@@ -1,8 +1,11 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { UserModel } from '../models/UserModel';
+import { NotificationModel } from '../models/NotificationModel';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { JWT_SECRET } from '../config/env';
+import { getIO } from '../sockets/ioInstance';
+import { sendPushNotification } from '../config/firebase';
 
 const router = Router();
 
@@ -270,6 +273,29 @@ router.post('/follow/:targetId', authMiddleware, async (req: AuthRequest, res) =
 
     const userObj = currentUser.toObject();
     delete userObj.password;
+
+    // Notify the target user when they gain a new follower (not on unfollow)
+    if (!isFollowing) {
+      const notification = await NotificationModel.create({
+        userId: targetId,
+        type: 'follow',
+        fromUserId: currentUserId,
+        fromUserName: currentUser.name,
+        fromUserAvatar: currentUser.avatar,
+        text: 'started following you',
+      });
+
+      const io = getIO();
+      if (io) io.to(`user_${targetId}`).emit('new_notification', notification);
+
+      if (targetUser.pushTokens && targetUser.pushTokens.length > 0) {
+        sendPushNotification(
+          targetUser.pushTokens,
+          { title: currentUser.name, body: 'started following you' },
+          { type: 'follow' }
+        ).catch(() => {});
+      }
+    }
 
     res.json({
       success: true,

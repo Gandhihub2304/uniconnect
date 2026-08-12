@@ -21,12 +21,27 @@ export const WebRTCCallModal: React.FC = () => {
   const [showCaptions, setShowCaptions] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [isRemoteConnected, setIsRemoteConnected] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const cameraTrackRef = useRef<MediaStreamTrack | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
+
+  const describeMediaError = (err: any): string => {
+    const name = err?.name || '';
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      return 'Camera/microphone permission was denied. Allow access in your device Settings to make calls.';
+    }
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      return 'No camera or microphone was found on this device.';
+    }
+    if (name === 'NotReadableError' || name === 'TrackStartError') {
+      return 'Camera or microphone is already in use by another app.';
+    }
+    return 'Could not access camera/microphone. Please check your permissions and try again.';
+  };
 
   const cleanupCall = () => {
     pcRef.current?.close();
@@ -112,6 +127,7 @@ export const WebRTCCallModal: React.FC = () => {
     if (!isCallModalOpen || callRole !== 'caller' || !activeCallUserId || !user) return;
 
     let cancelled = false;
+    setMediaError(null);
     (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: callType === 'video', audio: true });
@@ -135,6 +151,7 @@ export const WebRTCCallModal: React.FC = () => {
         });
       } catch (err) {
         console.warn('Could not start call (camera/mic unavailable):', err);
+        if (!cancelled) setMediaError(describeMediaError(err));
       }
     })();
 
@@ -158,6 +175,7 @@ export const WebRTCCallModal: React.FC = () => {
     if (!incomingCall || !user) return;
     const { fromId, offer } = incomingCall;
 
+    setMediaError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: incomingCall.callType === 'video', audio: true });
       localStreamRef.current = stream;
@@ -178,6 +196,8 @@ export const WebRTCCallModal: React.FC = () => {
       }, 0);
     } catch (err) {
       console.warn('Could not accept call (camera/mic unavailable):', err);
+      setMediaError(describeMediaError(err));
+      setIncomingCall(null);
     }
   };
 
@@ -234,6 +254,23 @@ export const WebRTCCallModal: React.FC = () => {
     const remainingSecs = secs % 60;
     return `${mins < 10 ? '0' : ''}${mins}:${remainingSecs < 10 ? '0' : ''}${remainingSecs}`;
   };
+
+  // Standalone permission-error banner (call never got far enough to open the full modal)
+  if (!isCallModalOpen && !incomingCall && mediaError) {
+    return (
+      <div className="fixed top-6 right-6 z-50 w-80 bg-slate-900 border border-rose-800/60 rounded-2xl shadow-2xl p-4 space-y-3 animate-in slide-in-from-top-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-rose-600/20 flex items-center justify-center text-rose-400 shrink-0">
+            <VideoOff className="w-4 h-4" />
+          </div>
+          <p className="text-xs text-slate-300">{mediaError}</p>
+        </div>
+        <button onClick={() => setMediaError(null)} className="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold">
+          Dismiss
+        </button>
+      </div>
+    );
+  }
 
   // Incoming call ringing banner (shown even if the full call UI isn't open yet)
   if (!isCallModalOpen && incomingCall) {

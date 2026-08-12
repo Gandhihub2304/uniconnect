@@ -107,10 +107,16 @@ export const ProfileView: React.FC = () => {
   const handleToggleFollow = async (targetId: string) => {
     try {
       const res = await apiPost(`/api/auth/follow/${targetId}`);
-      if (res.success) {
-        login(res.user, token!);
-        if (followModalType) {
-          openFollowModal(followModalType);
+      if (res.success && user) {
+        if (res.user) {
+          // Unfollow path returns the fresh user document directly
+          login(res.user, token!);
+        } else {
+          // Request/cancel paths only toggle sentFollowRequestIds locally
+          const sentIds = new Set(user.sentFollowRequestIds || []);
+          if (res.isRequested) sentIds.add(targetId);
+          else sentIds.delete(targetId);
+          login({ ...user, sentFollowRequestIds: Array.from(sentIds) }, token!);
         }
       }
     } catch (err) {
@@ -438,6 +444,8 @@ export const ProfileView: React.FC = () => {
               ) : (
                 followUserList.map((u) => {
                   const isFollowing = (user?.following || []).includes(u._id);
+                  const isRequested = (user?.sentFollowRequestIds || []).includes(u._id);
+                  const isFollowBack = followModalType === 'followers' && !isFollowing && !isRequested;
                   return (
                     <div key={u._id} className="flex items-center justify-between p-2 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
                       <div className="flex items-center gap-3">
@@ -452,12 +460,12 @@ export const ProfileView: React.FC = () => {
                         <button
                           onClick={() => handleToggleFollow(u._id)}
                           className={`px-3 py-1.5 rounded-xl font-bold text-xs shadow-sm transition-all ${
-                            isFollowing
+                            isFollowing || isRequested
                               ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
                               : 'bg-blue-600 hover:bg-blue-700 text-white'
                           }`}
                         >
-                          {isFollowing ? 'Following' : 'Follow'}
+                          {isFollowing ? 'Following' : isRequested ? 'Requested' : isFollowBack ? 'Follow Back' : 'Follow'}
                         </button>
                       )}
                     </div>

@@ -72,8 +72,17 @@ export const ExploreView: React.FC = () => {
     try {
       setFollowLoadingId(targetId);
       const data = await apiPost(`/api/auth/follow/${targetId}`);
-      if (data.success) {
-        login(data.user, token!);
+      if (data.success && user) {
+        if (data.user) {
+          // Unfollow path returns the fresh user document directly
+          login(data.user, token!);
+        } else {
+          // Request/cancel paths only toggle sentFollowRequestIds locally
+          const sentIds = new Set(user.sentFollowRequestIds || []);
+          if (data.isRequested) sentIds.add(targetId);
+          else sentIds.delete(targetId);
+          login({ ...user, sentFollowRequestIds: Array.from(sentIds) }, token!);
+        }
       }
     } catch (err) {
       console.error('Failed to toggle follow:', err);
@@ -107,6 +116,7 @@ export const ExploreView: React.FC = () => {
           <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[420px] overflow-y-auto">
             {suggestedUsers.map((u) => {
               const isFollowing = (user?.following || []).includes(u._id);
+              const isRequested = (user?.sentFollowRequestIds || []).includes(u._id);
               const isLoadingThis = followLoadingId === u._id;
               return (
                 <div key={u._id} className="flex items-center gap-3 px-4 py-3">
@@ -130,12 +140,12 @@ export const ExploreView: React.FC = () => {
                     onClick={() => handleToggleFollow(u._id)}
                     disabled={isLoadingThis}
                     className={`shrink-0 px-4 py-1.5 rounded-lg font-bold text-xs shadow-sm transition-all disabled:opacity-50 ${
-                      isFollowing
+                      isFollowing || isRequested
                         ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
                         : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-700 text-white'
                     }`}
                   >
-                    {isLoadingThis ? '...' : isFollowing ? 'Following' : 'Follow'}
+                    {isLoadingThis ? '...' : isFollowing ? 'Following' : isRequested ? 'Requested' : 'Follow'}
                   </button>
                 </div>
               );

@@ -2,8 +2,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { X, Heart, MessageCircle, UserPlus, Calendar, AtSign, CheckCheck, UserCheck } from 'lucide-react';
-import { apiGet, apiPatch, apiPost, apiDelete } from '@/lib/api';
+import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { onSocket, offSocket } from '@/lib/socket';
+import { useAppStore } from '@/store/useAppStore';
 
 interface NotificationDrawerProps {
   isOpen: boolean;
@@ -28,6 +29,7 @@ function timeAgo(dateStr: string): string {
 }
 
 export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, onClose }) => {
+  const { login, token } = useAppStore();
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const [notifications, setNotifications] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -93,21 +95,24 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
 
   const handleAcceptRequest = async (item: any) => {
     try {
-      await apiPost('/api/chats/accept-friend', { fromUserId: item.fromUserId, fromUserName: item.fromUserName });
-      // Remove the follow_request notification from list and mark accepted
+      await apiPost(`/api/auth/follow-request/${item.fromUserId}/confirm`);
       setAcceptedIds(prev => [...prev, item._id]);
       setNotifications(prev => prev.filter(n => n._id !== item._id));
+
+      // Refresh the logged-in user's followers list/count now that it changed
+      const me = await apiGet('/api/auth/me');
+      if (me.success && me.user && token) login(me.user, token);
     } catch (err) {
-      console.error('Failed to accept friend request:', err);
+      console.error('Failed to accept follow request:', err);
     }
   };
 
   const handleDeleteRequest = async (item: any) => {
     try {
-      await apiDelete(`/api/notifications/${item._id}`);
+      await apiPost(`/api/auth/follow-request/${item.fromUserId}/decline`);
       setNotifications(prev => prev.filter(n => n._id !== item._id));
     } catch (err) {
-      console.error('Failed to delete notification:', err);
+      console.error('Failed to decline follow request:', err);
     }
   };
 

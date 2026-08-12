@@ -4,11 +4,10 @@ import { useAppStore } from '@/store/useAppStore';
 import { apiGet, apiPost } from '@/lib/api';
 
 export const RightSidebar: React.FC = () => {
-  const { user, openChatWithUser } = useAppStore();
+  const { user, login, token, openChatWithUser } = useAppStore();
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState<boolean>(false);
-  const [requestedIds, setRequestedIds] = useState<string[]>([]);
-  const [acceptedFriendIds, setAcceptedFriendIds] = useState<string[]>([]);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchSidebarData = async () => {
@@ -17,22 +16,6 @@ export const RightSidebar: React.FC = () => {
         const sugRes = await apiGet('/api/auth/suggestions');
         if (sugRes.success && sugRes.users) {
           setSuggestions(sugRes.users);
-        }
-
-        // Fetch sent follow requests to persist "Requested ⏳" status on page refresh
-        const sentRes = await apiGet('/api/notifications/sent');
-        if (sentRes.success && sentRes.notifications) {
-          const sentUserIds = sentRes.notifications.map((n: any) => n.userId);
-          setRequestedIds(sentUserIds);
-        }
-
-        const chatRes = await apiGet('/api/chats');
-        if (chatRes.success && chatRes.chats) {
-          const myId = user?._id?.toString();
-          const friendIds = chatRes.chats.flatMap((c: any) =>
-            (c.participants || []).map((p: any) => p?.toString()).filter((id: string) => id && id !== myId)
-          );
-          setAcceptedFriendIds(friendIds);
         }
       } catch (err) {
         console.error('Failed to fetch sidebar data:', err);
@@ -44,29 +27,17 @@ export const RightSidebar: React.FC = () => {
     fetchSidebarData();
   }, [user?._id]);
 
-  const handleToggleFollow = async (sug: any) => {
-    const sugId = sug._id || sug.id?.toString();
-    if (!sugId) return;
-
-    if (acceptedFriendIds.includes(sugId)) {
-      setAcceptedFriendIds(acceptedFriendIds.filter(i => i !== sugId));
-      setRequestedIds(requestedIds.filter(i => i !== sugId));
-    } else if (requestedIds.includes(sugId)) {
-      setRequestedIds(requestedIds.filter(i => i !== sugId));
-    } else {
-      setRequestedIds(prev => [...prev, sugId]);
-      try {
-        await apiPost('/api/notifications', {
-          userId: sugId,
-          type: 'follow_request',
-          text: 'sent you a friend follow request',
-          fromUserId: user?._id,
-          fromUserName: user?.name,
-          fromUserAvatar: user?.avatar
-        });
-      } catch (err) {
-        console.error('Failed to send follow request notification:', err);
+  const handleToggleFollow = async (sugId: string) => {
+    try {
+      setLoadingId(sugId);
+      const data = await apiPost(`/api/auth/follow/${sugId}`);
+      if (data.success && data.user) {
+        login(data.user, token!);
       }
+    } catch (err) {
+      console.error('Failed to toggle follow:', err);
+    } finally {
+      setLoadingId(null);
     }
   };
 
@@ -91,7 +62,6 @@ export const RightSidebar: React.FC = () => {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-bold text-slate-400">Suggested for you</h3>
-          <span className="text-xs font-bold text-slate-900 dark:text-white hover:opacity-70 cursor-pointer">See All</span>
         </div>
 
         <div className="space-y-3">
@@ -106,8 +76,8 @@ export const RightSidebar: React.FC = () => {
           ) : (
             suggestions.map((sug) => {
               const sugId = (sug._id || sug.id)?.toString();
-              const isRequested = requestedIds.map(String).includes(sugId);
-              const isFriend = acceptedFriendIds.map(String).includes(sugId);
+              const isFollowing = (user?.following || []).map(String).includes(sugId);
+              const isRequested = (user?.sentFollowRequestIds || []).map(String).includes(sugId);
               const handle = sug.username ? `@${sug.username}` : (sug.handle || '@user');
 
               return (
@@ -126,15 +96,16 @@ export const RightSidebar: React.FC = () => {
 
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
-                      onClick={() => handleToggleFollow(sug)}
-                      className={`text-xs font-bold shrink-0 ${isFriend
+                      onClick={() => handleToggleFollow(sugId)}
+                      disabled={loadingId === sugId}
+                      className={`text-xs font-bold shrink-0 disabled:opacity-50 ${isFollowing
                           ? 'text-slate-500 dark:text-slate-400'
                           : isRequested
                             ? 'text-slate-400'
                             : 'text-[#0095F6] hover:text-[#1877c9]'
                         }`}
                     >
-                      {isFriend ? 'Following' : isRequested ? 'Requested' : 'Follow'}
+                      {isFollowing ? 'Following' : isRequested ? 'Requested' : 'Follow'}
                     </button>
                     <button
                       onClick={() => openChatWithUser(sugId)}

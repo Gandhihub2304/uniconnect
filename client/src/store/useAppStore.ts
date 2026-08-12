@@ -23,6 +23,7 @@ export interface UserProfile {
   website?: string;
   followers?: string[];
   following?: string[];
+  sentFollowRequestIds?: string[];
 }
 
 interface AppState {

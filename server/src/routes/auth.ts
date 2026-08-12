@@ -2,6 +2,7 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { UserModel } from '../models/UserModel';
 import { NotificationModel } from '../models/NotificationModel';
+import { FollowRequestModel } from '../models/FollowRequestModel';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { JWT_SECRET } from '../config/env';
 import { getIO } from '../sockets/ioInstance';
@@ -84,8 +85,11 @@ router.post('/login', async (req, res) => {
     await user.save();
 
     const token = user.generateAuthToken();
-    const userObject = user.toObject();
+    const userObject = user.toObject() as any;
     delete userObject.password;
+
+    const sentRequests = await FollowRequestModel.find({ fromUserId: user._id.toString() }).select('toUserId');
+    userObject.sentFollowRequestIds = sentRequests.map(r => r.toUserId);
 
     return res.json({ success: true, token, user: userObject });
   } catch (error: any) {
@@ -154,7 +158,11 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    res.json({ success: true, user });
+    const sentRequests = await FollowRequestModel.find({ fromUserId: req.user.id }).select('toUserId');
+    const userObj = user.toObject() as any;
+    userObj.sentFollowRequestIds = sentRequests.map(r => r.toUserId);
+
+    res.json({ success: true, user: userObj });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message || 'Error fetching profile' });
   }
@@ -238,7 +246,8 @@ router.get('/suggestions', authMiddleware, async (req: AuthRequest, res) => {
   }
 });
 
-// Follow / Unfollow User Toggle
+// Send a follow request, or cancel one you already sent, or unfollow if already following.
+// Real follows only happen once the target confirms via /follow-request/:requesterId/confirm.
 router.post('/follow/:targetId', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const targetId = req.params.targetId;
@@ -261,51 +270,140 @@ router.post('/follow/:targetId', authMiddleware, async (req: AuthRequest, res) =
     const isFollowing = currentUser.following.includes(targetId);
 
     if (isFollowing) {
+      // Unfollow immediately — no confirmation needed to remove a follow
       currentUser.following = currentUser.following.filter((id: string) => id !== targetId);
       targetUser.followers = targetUser.followers.filter((id: string) => id !== currentUserId);
-    } else {
-      currentUser.following.push(targetId);
-      targetUser.followers.push(currentUserId);
+      await currentUser.save();
+      await targetUser.save();
+
+      const userObj = currentUser.toObject();
+      delete userObj.password;
+
+      return res.json({
+        success: true,
+        isFollowing: false,
+        isRequested: false,
+        user: userObj,
+        followersCount: targetUser.followers.length,
+        followingCount: currentUser.following.length,
+      });
     }
 
-    await currentUser.save();
-    await targetUser.save();
+    const existingRequest = await FollowRequestModel.findOne({ fromUserId: currentUserId, toUserId: targetId });
 
-    const userObj = currentUser.toObject();
-    delete userObj.password;
+    if (existingRequest) {
+      // Tapping again on a pending request cancels it
+      await existingRequest.deleteOne();
+      await NotificationModel.findOneAndDelete({ userId: targetId, fromUserId: currentUserId, type: 'follow_request' });
 
-    // Notify the target user when they gain a new follower (not on unfollow)
-    if (!isFollowing) {
-      const notification = await NotificationModel.create({
-        userId: targetId,
-        type: 'follow',
-        fromUserId: currentUserId,
-        fromUserName: currentUser.name,
-        fromUserAvatar: currentUser.avatar,
-        text: 'started following you',
+      return res.json({
+        success: true,
+        isFollowing: false,
+        isRequested: false,
+        followersCount: targetUser.followers.length,
+        followingCount: currentUser.following.length,
       });
+    }
 
-      const io = getIO();
-      if (io) io.to(`user_${targetId}`).emit('new_notification', notification);
+    // Create a new pending follow request
+    await FollowRequestModel.create({ fromUserId: currentUserId, toUserId: targetId });
 
-      if (targetUser.pushTokens && targetUser.pushTokens.length > 0) {
-        sendPushNotification(
-          targetUser.pushTokens,
-          { title: currentUser.name, body: 'started following you' },
-          { type: 'follow' }
-        ).catch(() => {});
-      }
+    const notification = await NotificationModel.create({
+      userId: targetId,
+      type: 'follow_request',
+      fromUserId: currentUserId,
+      fromUserName: currentUser.name,
+      fromUserAvatar: currentUser.avatar,
+      text: 'wants to follow you',
+    });
+
+    const io = getIO();
+    if (io) io.to(`user_${targetId}`).emit('new_notification', notification);
+
+    if (targetUser.pushTokens && targetUser.pushTokens.length > 0) {
+      sendPushNotification(
+        targetUser.pushTokens,
+        { title: currentUser.name, body: 'wants to follow you' },
+        { type: 'follow_request' }
+      ).catch(() => {});
     }
 
     res.json({
       success: true,
-      isFollowing: !isFollowing,
-      user: userObj,
+      isFollowing: false,
+      isRequested: true,
       followersCount: targetUser.followers.length,
-      followingCount: currentUser.following.length
+      followingCount: currentUser.following.length,
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message || 'Error executing follow action' });
+  }
+});
+
+// Confirm a pending follow request — this is the only place followers/following actually get updated
+router.post('/follow-request/:requesterId/confirm', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const requesterId = req.params.requesterId;
+    const currentUserId = req.user.id;
+
+    const request = await FollowRequestModel.findOne({ fromUserId: requesterId, toUserId: currentUserId });
+    if (!request) return res.status(404).json({ success: false, message: 'Follow request not found' });
+
+    const requester = await UserModel.findById(requesterId);
+    const currentUser = await UserModel.findById(currentUserId);
+    if (!requester || !currentUser) return res.status(404).json({ success: false, message: 'User not found' });
+
+    if (!requester.following) requester.following = [];
+    if (!currentUser.followers) currentUser.followers = [];
+
+    if (!requester.following.includes(currentUserId)) requester.following.push(currentUserId);
+    if (!currentUser.followers.includes(requesterId)) currentUser.followers.push(requesterId);
+
+    await requester.save();
+    await currentUser.save();
+    await request.deleteOne();
+
+    // Clean up the original request notification, then let the requester know they were accepted
+    await NotificationModel.findOneAndDelete({ userId: currentUserId, fromUserId: requesterId, type: 'follow_request' });
+
+    const confirmNotif = await NotificationModel.create({
+      userId: requesterId,
+      type: 'follow',
+      fromUserId: currentUserId,
+      fromUserName: currentUser.name,
+      fromUserAvatar: currentUser.avatar,
+      text: 'accepted your follow request',
+    });
+
+    const io = getIO();
+    if (io) io.to(`user_${requesterId}`).emit('new_notification', confirmNotif);
+
+    if (requester.pushTokens && requester.pushTokens.length > 0) {
+      sendPushNotification(
+        requester.pushTokens,
+        { title: currentUser.name, body: 'accepted your follow request' },
+        { type: 'follow' }
+      ).catch(() => {});
+    }
+
+    res.json({ success: true, followersCount: currentUser.followers.length });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message || 'Error confirming follow request' });
+  }
+});
+
+// Decline a pending follow request — no follow relationship is created
+router.post('/follow-request/:requesterId/decline', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const requesterId = req.params.requesterId;
+    const currentUserId = req.user.id;
+
+    await FollowRequestModel.findOneAndDelete({ fromUserId: requesterId, toUserId: currentUserId });
+    await NotificationModel.findOneAndDelete({ userId: currentUserId, fromUserId: requesterId, type: 'follow_request' });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message || 'Error declining follow request' });
   }
 });
 

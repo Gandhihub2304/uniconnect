@@ -7,7 +7,7 @@ uploads/
 .env.local
 .env.production.local
 .env.*.local
-firebase-admin-key.json
+firebase-admin-key*
 
 # Generated build files
 client/out/

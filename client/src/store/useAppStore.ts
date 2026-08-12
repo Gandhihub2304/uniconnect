@@ -26,12 +26,27 @@ export interface UserProfile {
   sentFollowRequestIds?: string[];
 }
 
+export interface SavedAccount {
+  userId: string;
+  name: string;
+  username: string;
+  avatar: string;
+  token: string;
+}
+
 interface AppState {
   isAuthenticated: boolean;
   token: string | null;
   user: UserProfile | null;
   login: (user: UserProfile, token: string) => void;
   logout: () => void;
+
+  savedAccounts: SavedAccount[];
+  isAddingAccount: boolean;
+  startAddAccount: () => void;
+  cancelAddAccount: () => void;
+  switchAccount: (userId: string) => void;
+  removeAccount: (userId: string) => void;
 
   activeTab: NavTab;
   setActiveTab: (tab: NavTab) => void;
@@ -62,27 +77,87 @@ interface AppState {
   clearPendingChatUser: () => void;
 }
 
-export const useAppStore = create<AppState>((set) => ({
+const loadSavedAccounts = (): SavedAccount[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem('uniconnect_accounts');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const persistSavedAccounts = (accounts: SavedAccount[]) => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('uniconnect_accounts', JSON.stringify(accounts));
+  }
+};
+
+export const useAppStore = create<AppState>((set, get) => ({
   isAuthenticated: false,
   token: null,
   user: null,
 
   login: (user, token) => {
+    const accounts = loadSavedAccounts();
+    const next: SavedAccount = { userId: user._id, name: user.name, username: user.username, avatar: user.avatar, token };
+    const withoutThis = accounts.filter(a => a.userId !== user._id);
+    const updatedAccounts = [next, ...withoutThis];
+
     if (typeof window !== 'undefined') {
       localStorage.setItem('uniconnect_user', JSON.stringify(user));
       localStorage.setItem('uniconnect_token', token);
     }
-    set({ isAuthenticated: true, user, token });
+    persistSavedAccounts(updatedAccounts);
+    set({ isAuthenticated: true, user, token, savedAccounts: updatedAccounts, isAddingAccount: false });
   },
 
   logout: () => {
+    const { user } = get();
+    const remaining = loadSavedAccounts().filter(a => a.userId !== user?._id);
+    persistSavedAccounts(remaining);
+
     if (typeof window !== 'undefined') {
       localStorage.removeItem('uniconnect_token');
       localStorage.removeItem('uniconnect_user');
     }
     clearPushToken().catch(() => {});
     disconnectSocket();
-    set({ isAuthenticated: false, token: null, user: null });
+    set({ isAuthenticated: false, token: null, user: null, savedAccounts: remaining });
+  },
+
+  savedAccounts: loadSavedAccounts(),
+  isAddingAccount: false,
+  startAddAccount: () => set({ isAddingAccount: true }),
+  cancelAddAccount: () => set({ isAddingAccount: false }),
+
+  // Switches the active session to a different saved account without a network round-trip
+  // or a login-page flash: stays "authenticated" optimistically (this account logged in
+  // successfully before), while page.tsx's token-watching effect silently re-validates
+  // and refreshes the full profile from /api/auth/me in the background.
+  switchAccount: (userId) => {
+    const account = get().savedAccounts.find(a => a.userId === userId);
+    if (!account) return;
+
+    disconnectSocket();
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('uniconnect_token', account.token);
+      localStorage.setItem('uniconnect_user', JSON.stringify({
+        _id: account.userId, name: account.name, username: account.username, avatar: account.avatar,
+      }));
+    }
+    set({
+      token: account.token,
+      isAuthenticated: true,
+      user: { _id: account.userId, name: account.name, username: account.username, avatar: account.avatar, email: '' },
+      isAddingAccount: false,
+    });
+  },
+
+  removeAccount: (userId) => {
+    const remaining = get().savedAccounts.filter(a => a.userId !== userId);
+    persistSavedAccounts(remaining);
+    set({ savedAccounts: remaining });
   },
 
   activeTab: 'home',

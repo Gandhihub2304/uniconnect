@@ -8,10 +8,18 @@ import {
 import { useAppStore, NavTab } from '@/store/useAppStore';
 import { apiGet } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
+import { useLongPress } from '@/lib/useLongPress';
+import { AccountSwitcher } from './AccountSwitcher';
 
 export const LeftSidebar: React.FC = () => {
   const { activeTab, setActiveTab, user, logout } = useAppStore();
   const [unreadChats, setUnreadChats] = useState(0);
+  const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
+
+  const avatarLongPress = useLongPress(
+    () => setIsSwitcherOpen(true),
+    () => setActiveTab('profile')
+  );
 
   useEffect(() => {
     const refreshUnread = async () => {
@@ -108,7 +116,7 @@ export const LeftSidebar: React.FC = () => {
           onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-input)')}
           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
         >
-          <div className="story-avatar-ring shrink-0 cursor-pointer" onClick={() => setActiveTab('profile')}>
+          <div className="story-avatar-ring shrink-0 cursor-pointer select-none" title="Hold to switch accounts" {...avatarLongPress}>
             <img
               src={user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300'}
               alt={user?.name || 'User'}
@@ -116,7 +124,7 @@ export const LeftSidebar: React.FC = () => {
               style={{ border: '2px solid var(--bg-panel)' }}
             />
           </div>
-          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setActiveTab('profile')}>
+          <div className="flex-1 min-w-0 cursor-pointer select-none" {...avatarLongPress}>
             <h4 className="text-xs font-bold truncate leading-tight" style={{ color: 'var(--text-primary)' }}>
               {user?.name || 'Manoj Gandhi'}
             </h4>
@@ -136,6 +144,8 @@ export const LeftSidebar: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <AccountSwitcher isOpen={isSwitcherOpen} onClose={() => setIsSwitcherOpen(false)} />
     </aside>
   );
 };

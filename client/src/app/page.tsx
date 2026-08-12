@@ -25,20 +25,25 @@ import { connectSocket } from '@/lib/socket';
 import { initPushNotifications } from '@/lib/push';
 
 export default function Home() {
-  const { isAuthenticated, activeTab, login, logout, token } = useAppStore();
+  const { isAuthenticated, activeTab, login, logout, token, isAddingAccount, cancelAddAccount } = useAppStore();
   const [authView, setAuthView] = useState<'login' | 'signup'>('login');
   const [isMounted, setIsMounted] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
     setIsMounted(true);
+  }, []);
+
+  // Re-runs whenever the active token changes — covers both first load AND
+  // switchAccount() setting a different saved account's token.
+  useEffect(() => {
     if (typeof window === 'undefined') return;
-    const savedToken = localStorage.getItem('uniconnect_token');
+    const savedToken = token || localStorage.getItem('uniconnect_token');
     if (!savedToken) {
-      logout();
       setIsCheckingAuth(false);
       return;
     }
+    setIsCheckingAuth(true);
     apiGet('/api/auth/me')
       .then((data) => {
         if (data.success) login(data.user, savedToken);
@@ -46,7 +51,8 @@ export default function Home() {
       })
       .catch(() => logout())
       .finally(() => setIsCheckingAuth(false));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   useEffect(() => {
     if (isAuthenticated && token) {
@@ -83,6 +89,20 @@ export default function Home() {
       <LoginPage onSwitchToSignUp={() => setAuthView('signup')} />
     ) : (
       <SignUpPage onSwitchToLogin={() => setAuthView('login')} />
+    );
+  }
+
+  if (isAddingAccount) {
+    return (
+      <div className="fixed inset-0 z-[60] bg-white dark:bg-slate-950">
+        <button
+          onClick={cancelAddAccount}
+          className="absolute top-4 right-4 z-10 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+        >
+          Cancel
+        </button>
+        <LoginPage onSwitchToSignUp={() => setAuthView('signup')} />
+      </div>
     );
   }
 

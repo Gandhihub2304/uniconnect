@@ -5,10 +5,18 @@ import { Home, Compass, Film, MessageCircle, User } from 'lucide-react';
 import { useAppStore, NavTab } from '@/store/useAppStore';
 import { apiGet } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
+import { useLongPress } from '@/lib/useLongPress';
+import { AccountSwitcher } from './AccountSwitcher';
 
 export const BottomNav: React.FC = () => {
   const { activeTab, setActiveTab, user } = useAppStore();
   const [unreadChats, setUnreadChats] = useState(0);
+  const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
+
+  const profileLongPress = useLongPress(
+    () => setIsSwitcherOpen(true),
+    () => setActiveTab('profile')
+  );
 
   useEffect(() => {
     const refreshUnread = async () => {
@@ -49,9 +57,9 @@ export const BottomNav: React.FC = () => {
         return (
           <button
             key={item.id}
-            onClick={() => setActiveTab(item.id)}
+            {...(isProfile ? profileLongPress : { onClick: () => setActiveTab(item.id) })}
             aria-label={item.label}
-            className="relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 min-h-[52px] active:opacity-60 transition-opacity"
+            className="relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 min-h-[52px] active:opacity-60 transition-opacity select-none"
           >
             {isProfile ? (
               <div
@@ -82,6 +90,8 @@ export const BottomNav: React.FC = () => {
           </button>
         );
       })}
+
+      <AccountSwitcher isOpen={isSwitcherOpen} onClose={() => setIsSwitcherOpen(false)} />
     </nav>
   );
 };

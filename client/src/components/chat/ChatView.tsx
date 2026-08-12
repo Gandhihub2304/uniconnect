@@ -1076,14 +1076,14 @@ export const ChatView: React.FC = () => {
 
               <div className="flex items-center gap-0.5 sm:gap-1 relative shrink-0">
                 <button
-                  onClick={() => startCall(activeChat.id, activeChat.name, 'voice')}
+                  onClick={() => startCall(activeChat.otherUserId || activeChat.id, activeChat.name, 'voice')}
                   className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-full text-slate-900 dark:text-white active:bg-slate-100 dark:active:bg-slate-800 transition-colors"
                   title="Voice Call"
                 >
                   <Phone className="w-5 h-5" />
                 </button>
                 <button
-                  onClick={() => startCall(activeChat.id, activeChat.name, 'video')}
+                  onClick={() => startCall(activeChat.otherUserId || activeChat.id, activeChat.name, 'video')}
                   className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-full text-slate-900 dark:text-white active:bg-slate-100 dark:active:bg-slate-800 transition-colors"
                   title="Video Call"
                 >

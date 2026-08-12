@@ -4,8 +4,36 @@ import { MessageModel } from '../models/MessageModel';
 import { UserModel } from '../models/UserModel';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { getIO } from '../sockets/ioInstance';
+import { sendPushNotification } from '../config/firebase';
 
 const router = Router();
+
+// Push a "new message" alert to every other participant of a chat who has a registered device,
+// pruning any tokens Firebase reports as no-longer-valid.
+async function notifyChatParticipants(chatId: string, senderName: string, messagePreview: string, senderId: string) {
+  const chat = await ChatModel.findById(chatId);
+  if (!chat) return;
+
+  const recipientIds = chat.participants.filter((pid: string) => pid !== senderId);
+  if (recipientIds.length === 0) return;
+
+  const recipients = await UserModel.find({ _id: { $in: recipientIds } }).select('pushTokens');
+  const allTokens = recipients.flatMap(r => r.pushTokens || []);
+  if (allTokens.length === 0) return;
+
+  const result = await sendPushNotification(
+    allTokens,
+    { title: senderName, body: messagePreview },
+    { type: 'new_message', chatId }
+  );
+
+  if (result?.staleTokens && result.staleTokens.length > 0) {
+    await UserModel.updateMany(
+      { _id: { $in: recipientIds } },
+      { $pullAll: { pushTokens: result.staleTokens } }
+    );
+  }
+}
 
 router.get('/', authMiddleware, async (req: AuthRequest, res) => {
   try {
@@ -215,6 +243,9 @@ router.post('/:chatId/messages', authMiddleware, async (req: AuthRequest, res) =
       io.to(`chat_${chatId}`).emit('new_message', enrichedMsg);
       io.emit('chat_updated', { chatId, lastMessage: lastMsgText, lastMessageTime: new Date() });
     }
+
+    // Push notification to the other participant(s), for when the app is closed/backgrounded
+    notifyChatParticipants(chatId, user.name, lastMsgText, req.user.id).catch(() => {});
 
     res.status(201).json({ success: true, message: enrichedMsg });
   } catch (error: any) {

@@ -19,6 +19,7 @@ export interface IUserDocument extends Document {
   following: string[];
   isOnline: boolean;
   lastSeen: Date;
+  pushTokens: string[];
   comparePassword(candidatePassword: string): Promise<boolean>;
   generateAuthToken(): string;
 }
@@ -40,6 +41,7 @@ const UserSchema = new Schema<IUserDocument>(
     following: { type: [String], default: [] },
     isOnline: { type: Boolean, default: true },
     lastSeen: { type: Date, default: Date.now },
+    pushTokens: { type: [String], default: [] },
   },
   { timestamps: true }
 );

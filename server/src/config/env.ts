@@ -10,3 +10,8 @@ export const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
 export const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || '';
 export const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || '';
 export const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || '';
+
+// Firebase Admin credentials: on Render, set FIREBASE_SERVICE_ACCOUNT to the
+// full JSON contents of the service account key. Locally, falls back to
+// reading the gitignored firebase-admin-key.json file in this directory.
+export const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT || '';

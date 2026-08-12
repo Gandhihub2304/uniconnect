@@ -196,6 +196,32 @@ router.put('/settings', authMiddleware, async (req: AuthRequest, res) => {
   }
 });
 
+// Register this device's FCM push token against the logged-in user (called on app login)
+router.post('/push-token', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const { token: pushToken } = req.body;
+    if (!pushToken) return res.status(400).json({ success: false, message: 'token is required' });
+
+    await UserModel.findByIdAndUpdate(req.user.id, { $addToSet: { pushTokens: pushToken } });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message || 'Error registering push token' });
+  }
+});
+
+// Remove a device's push token (called on logout)
+router.post('/push-token/remove', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const { token: pushToken } = req.body;
+    if (!pushToken) return res.status(400).json({ success: false, message: 'token is required' });
+
+    await UserModel.findByIdAndUpdate(req.user.id, { $pull: { pushTokens: pushToken } });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message || 'Error removing push token' });
+  }
+});
+
 // Suggestions (users you may know). Pass ?all=true to list every user (used by the mobile Explore "People" tab).
 router.get('/suggestions', authMiddleware, async (req: AuthRequest, res) => {
   try {

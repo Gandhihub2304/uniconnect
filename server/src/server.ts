@@ -6,6 +6,7 @@ import path from 'path';
 
 import { PORT } from './config/env';
 import { connectDB } from './config/db';
+import { initFirebase } from './config/firebase';
 import authRoutes from './routes/auth';
 import postsRoutes from './routes/posts';
 import storiesRoutes from './routes/stories';
@@ -36,6 +37,9 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Connect Database
 connectDB();
+
+// Init Firebase Admin (push notifications)
+initFirebase();
 
 // Setup Socket.IO
 setupSocketHandlers(io);

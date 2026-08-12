@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { disconnectSocket } from '@/lib/socket';
+import { clearPushToken } from '@/lib/push';
 
 export type NavTab =
   | 'home'
@@ -78,6 +79,7 @@ export const useAppStore = create<AppState>((set) => ({
       localStorage.removeItem('uniconnect_token');
       localStorage.removeItem('uniconnect_user');
     }
+    clearPushToken().catch(() => {});
     disconnectSocket();
     set({ isAuthenticated: false, token: null, user: null });
   },

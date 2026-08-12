@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "190862276388",
+    "project_id": "uniconnect-e1c52",
+    "storage_bucket": "uniconnect-e1c52.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:190862276388:android:fecebf6e6b8f85f80ea5b1",
+        "android_client_info": {
+          "package_name": "com.uniconnect.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDC23Tb4dKMS15uxLO_hhingbEeYsqj5gE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

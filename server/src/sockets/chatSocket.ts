@@ -4,6 +4,21 @@ import { JWT_SECRET } from '../config/env';
 import { ChatModel } from '../models/ChatModel';
 import { MessageModel } from '../models/MessageModel';
 import { UserModel } from '../models/UserModel';
+import { sendPushNotification } from '../config/firebase';
+
+async function notifyChatParticipants(chatId: string, senderName: string, messagePreview: string, senderId: string) {
+  const chat = await ChatModel.findById(chatId);
+  if (!chat) return;
+  const recipientIds = chat.participants.filter((pid: string) => pid !== senderId);
+  if (recipientIds.length === 0) return;
+  const recipients = await UserModel.find({ _id: { $in: recipientIds } }).select('pushTokens');
+  const allTokens = recipients.flatMap(r => r.pushTokens || []);
+  if (allTokens.length === 0) return;
+  const result = await sendPushNotification(allTokens, { title: senderName, body: messagePreview }, { type: 'new_message', chatId });
+  if (result?.staleTokens && result.staleTokens.length > 0) {
+    await UserModel.updateMany({ _id: { $in: recipientIds } }, { $pullAll: { pushTokens: result.staleTokens } });
+  }
+}
 
 // userId -> set of connected socket ids (a user can have multiple tabs)
 const onlineUsers = new Map<string, Set<string>>();
@@ -69,6 +84,7 @@ export const setupSocketHandlers = (io: Server) => {
         });
 
         io.to(`chat_${data.chatId}`).emit('new_message', message);
+        notifyChatParticipants(data.chatId, user.name, data.text || 'Sent media', userId).catch(() => {});
       } catch (err) {
         console.error('send_message error:', err);
       }

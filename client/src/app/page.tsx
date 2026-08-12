@@ -22,6 +22,7 @@ import { CommandPalette } from '@/components/layout/CommandPalette';
 import { useAppStore } from '@/store/useAppStore';
 import { apiGet } from '@/lib/api';
 import { connectSocket } from '@/lib/socket';
+import { initPushNotifications } from '@/lib/push';
 
 export default function Home() {
   const { isAuthenticated, activeTab, login, logout, token } = useAppStore();
@@ -47,6 +48,7 @@ export default function Home() {
   useEffect(() => {
     if (isAuthenticated && token) {
       connectSocket(token);
+      initPushNotifications();
     }
   }, [isAuthenticated, token]);
 

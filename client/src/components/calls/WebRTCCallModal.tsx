@@ -14,6 +14,7 @@ export const WebRTCCallModal: React.FC = () => {
   const {
     isCallModalOpen, activeCallUser, activeCallUserId, callType, callRole, endCall,
     incomingCall, setIncomingCall, acceptIncomingCall, user,
+    autoAcceptCallFromId, setAutoAcceptCallFromId,
   } = useAppStore();
 
   const [isMuted, setIsMuted] = useState(false);
@@ -68,6 +69,9 @@ export const WebRTCCallModal: React.FC = () => {
     pc.ontrack = (e) => {
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = e.streams[0];
+        // Some Android WebViews need an explicit play() even with autoPlay set,
+        // especially for audio-only (voice call) tracks.
+        remoteVideoRef.current.play().catch(() => {});
       }
       setIsRemoteConnected(true);
     };
@@ -209,6 +213,17 @@ export const WebRTCCallModal: React.FC = () => {
     }
   };
 
+  // Auto-accept once the real offer arrives, if the user already tapped Accept on the
+  // native full-screen notification while the app was closed (that screen can't complete
+  // the WebRTC handshake itself — it has no live JS/socket context, only the app does).
+  useEffect(() => {
+    if (incomingCall && autoAcceptCallFromId && incomingCall.fromId === autoAcceptCallFromId) {
+      setAutoAcceptCallFromId(null);
+      handleAcceptIncoming();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incomingCall, autoAcceptCallFromId]);
+
   const handleDeclineIncoming = () => {
     if (incomingCall) getSocket()?.emit('end_call', { to: incomingCall.fromId });
     stopRingtone();
@@ -343,12 +358,14 @@ export const WebRTCCallModal: React.FC = () => {
       <div className="w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[85vh] max-h-[620px] relative">
         {/* Video Canvas Container */}
         <div className="relative flex-1 bg-slate-950 flex items-center justify-center overflow-hidden">
-          {/* Remote Peer Video */}
+          {/* Remote Peer Video — stays mounted (opacity, not display:none) so its
+              audio track keeps playing even before the "connected" UI switches over;
+              WebViews commonly suspend media playback on display:none elements. */}
           <video
             ref={remoteVideoRef}
             autoPlay
             playsInline
-            className={`w-full h-full object-cover ${isRemoteConnected ? 'block' : 'hidden'}`}
+            className={`w-full h-full object-cover absolute inset-0 transition-opacity ${isRemoteConnected ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
           />
 
           {!isRemoteConnected && (

@@ -8,21 +8,14 @@ import { apiGet } from '@/lib/api';
 import { onSocket, offSocket } from '@/lib/socket';
 
 export const TopBar: React.FC = () => {
-  const { theme, toggleTheme, setCommandPaletteOpen, setActiveTab, user } = useAppStore();
+  const { theme, toggleTheme, setCommandPaletteOpen, setActiveTab, user, unreadChatsCount } = useAppStore();
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
-  const [unreadChats, setUnreadChats] = useState(0);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [bellShaking, setBellShaking] = useState(false);
 
-  const refreshCounts = async () => {
+  const refreshNotifications = async () => {
     try {
-      const [chatsData, notifData] = await Promise.all([
-        apiGet('/api/chats'),
-        apiGet('/api/notifications'),
-      ]);
-      if (chatsData.success) {
-        setUnreadChats(chatsData.chats.reduce((sum: number, c: any) => sum + (c.unreadCount || 0), 0));
-      }
+      const notifData = await apiGet('/api/notifications');
       if (notifData.success) {
         setUnreadNotifications(notifData.notifications.filter((n: any) => !n.isRead).length);
       }
@@ -31,17 +24,14 @@ export const TopBar: React.FC = () => {
 
   useEffect(() => {
     if (!user) return;
-    refreshCounts();
-    const onNewMessage = () => refreshCounts();
+    refreshNotifications();
     const onNewNotification = () => {
       setUnreadNotifications(prev => prev + 1);
       setBellShaking(true);
       setTimeout(() => setBellShaking(false), 700);
     };
-    onSocket('new_message', onNewMessage);
     onSocket('new_notification', onNewNotification);
     return () => {
-      offSocket('new_message', onNewMessage);
       offSocket('new_notification', onNewNotification);
     };
   }, [user?._id]);
@@ -115,12 +105,12 @@ export const TopBar: React.FC = () => {
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >
             <MessageSquare className="w-4 h-4" />
-            {unreadChats > 0 && (
+            {unreadChatsCount > 0 && (
               <span
                 className="absolute top-1 right-1 min-w-[14px] h-3.5 px-0.5 text-[9px] font-black rounded-full flex items-center justify-center"
                 style={{ background: 'var(--accent)', color: '#fff', lineHeight: 1 }}
               >
-                {unreadChats > 9 ? '9+' : unreadChats}
+                {unreadChatsCount > 9 ? '9+' : unreadChatsCount}
               </span>
             )}
           </button>

@@ -21,11 +21,12 @@ import { WebRTCCallModal } from '@/components/calls/WebRTCCallModal';
 import { CommandPalette } from '@/components/layout/CommandPalette';
 import { useAppStore } from '@/store/useAppStore';
 import { apiGet } from '@/lib/api';
-import { connectSocket } from '@/lib/socket';
+import { connectSocket, onSocket, offSocket } from '@/lib/socket';
 import { initPushNotifications } from '@/lib/push';
+import { consumePendingCallAccept } from '@/lib/pendingCall';
 
 export default function Home() {
-  const { isAuthenticated, activeTab, login, logout, token, isAddingAccount, cancelAddAccount } = useAppStore();
+  const { isAuthenticated, activeTab, login, logout, token, isAddingAccount, cancelAddAccount, setUnreadChatsCount, setAutoAcceptCallFromId } = useAppStore();
   const [authView, setAuthView] = useState<'login' | 'signup'>('login');
   const [isMounted, setIsMounted] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -60,6 +61,35 @@ export default function Home() {
       initPushNotifications();
     }
   }, [isAuthenticated, token]);
+
+  // If this launch was triggered by tapping Accept on the native full-screen incoming-call
+  // notification, flag the caller so WebRTCCallModal auto-accepts as soon as the real
+  // call_incoming socket event (carrying the actual WebRTC offer) arrives.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    consumePendingCallAccept().then((result) => {
+      if (result.pending && result.fromId) {
+        setAutoAcceptCallFromId(result.fromId);
+      }
+    });
+  }, [isAuthenticated]);
+
+  // Single shared unread-chats count, refreshed on login and on any new message —
+  // read by LeftSidebar/BottomNav/TopBar instead of each fetching /api/chats itself.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const refreshUnread = async () => {
+      try {
+        const data = await apiGet('/api/chats');
+        if (data.success && data.chats) {
+          setUnreadChatsCount(data.chats.reduce((sum: number, c: any) => sum + (c.unread || c.unreadCount || 0), 0));
+        }
+      } catch { /* silent */ }
+    };
+    refreshUnread();
+    onSocket('new_message', refreshUnread);
+    return () => offSocket('new_message', refreshUnread);
+  }, [isAuthenticated]);
 
   // Prevent SSR hydration mismatch, and avoid a login-page flash while we're
   // still verifying a saved token against the server on cold start.

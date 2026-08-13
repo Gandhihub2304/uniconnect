@@ -31,7 +31,9 @@ import {
   Reply,
   CornerUpLeft,
   Palette,
-  ArrowLeft
+  ArrowLeft,
+  Play,
+  Pause
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { apiGet, apiPost, apiPut, apiDelete, apiUpload } from '@/lib/api';
@@ -57,6 +59,13 @@ export const ChatView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [inputText, setInputText] = useState('');
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [voiceRecordSeconds, setVoiceRecordSeconds] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceChunksRef = useRef<Blob[]>([]);
+  const voiceStreamRef = useRef<MediaStream | null>(null);
+  const voiceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+  const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
   const [disappearingTimer, setDisappearingTimer] = useState<DisappearingTimer>('off');
   const [isTimerMenuOpen, setIsTimerMenuOpen] = useState(false);
   const [isWallpaperMenuOpen, setIsWallpaperMenuOpen] = useState(false);
@@ -208,6 +217,7 @@ export const ChatView: React.FC = () => {
               mediaType: m.mediaType,
               fileName: m.fileName,
               fileSize: m.fileSize,
+              voiceDuration: m.voiceDuration,
               isViewOnce: m.isViewOnce,
               viewedBy: m.viewedBy || [],
               reactions: m.reactions || [],
@@ -265,6 +275,7 @@ export const ChatView: React.FC = () => {
         mediaType: m.mediaType,
         fileName: m.fileName,
         fileSize: m.fileSize,
+        voiceDuration: m.voiceDuration,
         isViewOnce: m.isViewOnce,
         viewedBy: m.viewedBy || [],
         reactions: m.reactions || [],
@@ -475,35 +486,44 @@ export const ChatView: React.FC = () => {
     setShowScrollBottom(isFarFromBottom);
   };
 
-  // Countdown timer effect for 10s disappearing messages
+  // Countdown timer for 10s disappearing messages — only ticks while at least one
+  // message actually has an expiry set, instead of running unconditionally forever.
+  const hasExpiringMessages = Object.values(messages).some(list => list.some(m => m.expiresAt));
   useEffect(() => {
+    if (!hasExpiringMessages) return;
+
     const interval = setInterval(() => {
       setMessages(prev => {
-        const updated = { ...prev };
         let changed = false;
-        Object.keys(updated).forEach(chatId => {
-          const filtered = updated[chatId].filter(msg => {
+        const updated: Record<string, any[]> = {};
+        for (const chatId of Object.keys(prev)) {
+          const list = prev[chatId];
+          let listChanged = false;
+          const filtered: any[] = [];
+          for (const msg of list) {
             if (msg.expiresAt) {
               const remaining = Math.max(0, Math.ceil((msg.expiresAt - Date.now()) / 1000));
               if (remaining <= 0) {
-                changed = true;
-                return false;
+                listChanged = true;
+                continue;
               }
-              msg.ttl = remaining;
+              if (remaining !== msg.ttl) {
+                filtered.push({ ...msg, ttl: remaining });
+                listChanged = true;
+                continue;
+              }
             }
-            return true;
-          });
-          if (filtered.length !== updated[chatId].length) {
-            changed = true;
-            updated[chatId] = filtered;
+            filtered.push(msg);
           }
-        });
+          updated[chatId] = listChanged ? filtered : list;
+          if (listChanged) changed = true;
+        }
         return changed ? updated : prev;
       });
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [hasExpiringMessages]);
 
   // Cleanup camera stream on unmount
   useEffect(() => {
@@ -513,6 +533,21 @@ export const ChatView: React.FC = () => {
       }
     };
   }, [cameraStream]);
+
+  // Stop any in-progress voice recording / playback on unmount
+  useEffect(() => {
+    return () => {
+      if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
+      voiceStreamRef.current?.getTracks().forEach(t => t.stop());
+      voiceAudioRef.current?.pause();
+    };
+  }, []);
+
+  // Stop voice-note playback when switching chats
+  useEffect(() => {
+    voiceAudioRef.current?.pause();
+    setPlayingVoiceId(null);
+  }, [activeChatId]);
 
   // Handle standard text send
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -895,31 +930,124 @@ export const ChatView: React.FC = () => {
     }
   };
 
-  const handleVoiceRecordToggle = () => {
+  const formatDuration = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const startVoiceRecording = async () => {
     if (!activeChatId) return;
-    if (isRecordingVoice) {
-      setIsRecordingVoice(false);
-      const text = '🎙️ Voice Note (0:12s)';
-      const expiresAt = disappearingTimer === '10s' ? Date.now() + 10000 : null;
-      const voiceMsg = {
-        id: Date.now().toString(),
-        sender: user?.name || 'You',
-        avatar: user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
-        text,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        isMe: true,
-        expiresAt,
-        ttl: disappearingTimer === '10s' ? 10 : null,
-        timerType: disappearingTimer
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      voiceStreamRef.current = stream;
+      voiceChunksRef.current = [];
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+      const recorder = new MediaRecorder(stream, { mimeType });
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) voiceChunksRef.current.push(e.data);
       };
-      setMessages(prev => ({
-        ...prev,
-        [activeChatId]: [...(prev[activeChatId] || []), voiceMsg]
-      }));
-      apiPost(`/api/chats/${activeChatId}/messages`, { text }).catch(console.error);
-    } else {
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+
+      setVoiceRecordSeconds(0);
       setIsRecordingVoice(true);
+      voiceTimerRef.current = setInterval(() => setVoiceRecordSeconds(s => s + 1), 1000);
+    } catch (err) {
+      console.error('Unable to access microphone:', err);
+      alert('Unable to access microphone. Please check microphone permissions.');
     }
+  };
+
+  const cancelVoiceRecording = () => {
+    mediaRecorderRef.current?.stop();
+    voiceStreamRef.current?.getTracks().forEach(t => t.stop());
+    voiceStreamRef.current = null;
+    mediaRecorderRef.current = null;
+    voiceChunksRef.current = [];
+    if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
+    setIsRecordingVoice(false);
+    setVoiceRecordSeconds(0);
+  };
+
+  const sendVoiceRecording = async () => {
+    if (!mediaRecorderRef.current || !activeChatId) { cancelVoiceRecording(); return; }
+    const recorder = mediaRecorderRef.current;
+    const durationSecs = voiceRecordSeconds;
+
+    if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
+    setIsRecordingVoice(false);
+    setVoiceRecordSeconds(0);
+
+    recorder.onstop = async () => {
+      voiceStreamRef.current?.getTracks().forEach(t => t.stop());
+      voiceStreamRef.current = null;
+      mediaRecorderRef.current = null;
+
+      if (voiceChunksRef.current.length === 0) return;
+      const blob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+      voiceChunksRef.current = [];
+      if (blob.size === 0) return;
+
+      const ext = recorder.mimeType?.includes('mp4') ? 'm4a' : 'webm';
+      const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: blob.type });
+
+      try {
+        setIsUploadingFile(true);
+        const formData = new FormData();
+        formData.append('file', file);
+        const uploadRes = await apiUpload('/api/upload', formData);
+        const fileUrl = uploadRes.fileUrl || uploadRes.url;
+
+        const text = `🎙️ Voice Note (${formatDuration(durationSecs)})`;
+        const voiceMsg = {
+          id: Date.now().toString(),
+          sender: user?.name || 'You',
+          avatar: user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+          text,
+          mediaUrl: fileUrl,
+          mediaType: 'audio' as const,
+          voiceDuration: durationSecs,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isMe: true,
+        };
+        setMessages(prev => ({
+          ...prev,
+          [activeChatId]: [...(prev[activeChatId] || []), voiceMsg]
+        }));
+
+        await apiPost(`/api/chats/${activeChatId}/messages`, {
+          text,
+          mediaUrl: fileUrl,
+          mediaType: 'audio',
+          voiceDuration: durationSecs,
+          disappearingTimer,
+        });
+      } catch (err) {
+        console.error('Failed to send voice note:', err);
+      } finally {
+        setIsUploadingFile(false);
+      }
+    };
+
+    recorder.stop();
+  };
+
+  const toggleVoicePlayback = (msgId: string, url: string) => {
+    if (playingVoiceId === msgId) {
+      voiceAudioRef.current?.pause();
+      setPlayingVoiceId(null);
+      return;
+    }
+    if (voiceAudioRef.current) {
+      voiceAudioRef.current.pause();
+    }
+    const audio = new Audio(url);
+    audio.onended = () => setPlayingVoiceId(null);
+    audio.play().catch(err => console.error('Failed to play voice note:', err));
+    voiceAudioRef.current = audio;
+    setPlayingVoiceId(msgId);
   };
 
   const filteredChats = chats.filter(c => 
@@ -1341,6 +1469,36 @@ export const ChatView: React.FC = () => {
                                   </div>
                                 )}
 
+                                {/* VOICE NOTE PLAYER */}
+                                {msg.mediaType === 'audio' && msg.mediaUrl && (
+                                  <button
+                                    onClick={() => toggleVoicePlayback(msg.id, msg.mediaUrl)}
+                                    className={`flex items-center gap-2.5 px-1 py-1 rounded-full min-w-[180px] ${
+                                      msg.isMe ? 'text-white' : 'text-slate-900 dark:text-white'
+                                    }`}
+                                  >
+                                    <span className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                                      msg.isMe ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-700'
+                                    }`}>
+                                      {playingVoiceId === msg.id ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+                                    </span>
+                                    <span className="flex-1 flex items-center gap-0.5 h-6">
+                                      {Array.from({ length: 24 }).map((_, i) => (
+                                        <span
+                                          key={i}
+                                          className={`w-0.5 rounded-full ${msg.isMe ? 'bg-white/60' : 'bg-slate-400 dark:bg-slate-500'}`}
+                                          style={{ height: `${20 + Math.abs(Math.sin(i * 1.7)) * 60}%` }}
+                                        />
+                                      ))}
+                                    </span>
+                                    {msg.voiceDuration !== undefined && (
+                                      <span className="text-[10px] font-semibold opacity-80 shrink-0">
+                                        {formatDuration(msg.voiceDuration)}
+                                      </span>
+                                    )}
+                                  </button>
+                                )}
+
                                 {/* DOCUMENT / FILE ATTACHMENT */}
                                 {msg.mediaType === 'document' && (
                                   <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 ${
@@ -1558,65 +1716,89 @@ export const ChatView: React.FC = () => {
                 <Camera className="w-6 h-6" />
               </button>
 
-              {/* Rounded input pill */}
-              <div className="flex-1 min-w-0 flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-full pl-3.5 pr-1 py-1">
-                <input
-                  type="text"
-                  value={inputText}
-                  onChange={handleInputChange}
-                  placeholder={
-                    isViewOnceSelected
-                      ? 'Send 1x View Once Photo...'
-                      : disappearingTimer !== 'off'
-                        ? `Send disappearing message (${disappearingTimer})...`
-                        : `Message...`
-                  }
-                  className="flex-1 min-w-0 bg-transparent text-sm text-slate-900 dark:text-white placeholder:text-slate-500 focus:outline-none py-1.5"
-                />
-
-                {/* Attach File Button */}
-                <button
-                  type="button"
-                  onClick={() => chatFileRef.current?.click()}
-                  disabled={isUploadingFile}
-                  className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center text-slate-900 dark:text-white active:opacity-60 transition-opacity disabled:opacity-50 shrink-0"
-                  title="Attach File / Document / Photo"
-                >
-                  {isUploadingFile ? <RefreshCw className="w-5 h-5 animate-spin text-blue-500" /> : <Paperclip className="w-5 h-5" />}
-                </button>
-
-                {/* 1x View Once Toggle Button */}
-                <button
-                  type="button"
-                  onClick={() => setIsViewOnceSelected(!isViewOnceSelected)}
-                  className={`p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-full transition-all shrink-0 ${
-                    isViewOnceSelected ? 'text-amber-500' : 'text-slate-900 dark:text-white active:opacity-60'
-                  }`}
-                  title="Toggle 1x View Once Photo"
-                >
-                  <Eye className="w-5 h-5" />
-                </button>
-              </div>
-
-              {inputText.trim() ? (
-                <button
-                  type="submit"
-                  disabled={isUploadingFile}
-                  className="text-[#0095F6] font-semibold text-sm px-3 py-2 disabled:opacity-50 shrink-0"
-                >
-                  Send
-                </button>
+              {isRecordingVoice ? (
+                <div className="flex-1 min-w-0 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 rounded-full pl-3.5 pr-1.5 py-1.5">
+                  <button
+                    type="button"
+                    onClick={cancelVoiceRecording}
+                    className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center text-rose-500 active:opacity-60 shrink-0"
+                    title="Cancel Recording"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
+                  <span className="flex-1 text-sm font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
+                    {formatDuration(voiceRecordSeconds)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={sendVoiceRecording}
+                    className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full bg-[#0095F6] text-white active:opacity-80 shrink-0"
+                    title="Send Voice Note"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={handleVoiceRecordToggle}
-                  className={`p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-full transition-all shrink-0 ${
-                    isRecordingVoice ? 'text-rose-500 animate-pulse' : 'text-slate-900 dark:text-white active:bg-slate-100 dark:active:bg-slate-800'
-                  }`}
-                  title="Voice Note"
-                >
-                  <Mic className="w-6 h-6" />
-                </button>
+                <div className="flex-1 min-w-0 flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-full pl-3.5 pr-1 py-1">
+                  <input
+                    type="text"
+                    value={inputText}
+                    onChange={handleInputChange}
+                    placeholder={
+                      isViewOnceSelected
+                        ? 'Send 1x View Once Photo...'
+                        : disappearingTimer !== 'off'
+                          ? `Send disappearing message (${disappearingTimer})...`
+                          : `Message...`
+                    }
+                    className="flex-1 min-w-0 bg-transparent text-sm text-slate-900 dark:text-white placeholder:text-slate-500 focus:outline-none py-1.5"
+                  />
+
+                  {/* Attach File Button */}
+                  <button
+                    type="button"
+                    onClick={() => chatFileRef.current?.click()}
+                    disabled={isUploadingFile}
+                    className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center text-slate-900 dark:text-white active:opacity-60 transition-opacity disabled:opacity-50 shrink-0"
+                    title="Attach File / Document / Photo"
+                  >
+                    {isUploadingFile ? <RefreshCw className="w-5 h-5 animate-spin text-blue-500" /> : <Paperclip className="w-5 h-5" />}
+                  </button>
+
+                  {/* 1x View Once Toggle Button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsViewOnceSelected(!isViewOnceSelected)}
+                    className={`p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-full transition-all shrink-0 ${
+                      isViewOnceSelected ? 'text-amber-500' : 'text-slate-900 dark:text-white active:opacity-60'
+                    }`}
+                    title="Toggle 1x View Once Photo"
+                  >
+                    <Eye className="w-5 h-5" />
+                  </button>
+                </div>
+              )}
+
+              {!isRecordingVoice && (
+                inputText.trim() ? (
+                  <button
+                    type="submit"
+                    disabled={isUploadingFile}
+                    className="text-[#0095F6] font-semibold text-sm px-3 py-2 disabled:opacity-50 shrink-0"
+                  >
+                    Send
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={startVoiceRecording}
+                    className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-full text-slate-900 dark:text-white active:bg-slate-100 dark:active:bg-slate-800 transition-all shrink-0"
+                    title="Voice Note"
+                  >
+                    <Mic className="w-6 h-6" />
+                  </button>
+                )
               )}
             </form>
           </>

@@ -4,7 +4,7 @@ import { JWT_SECRET } from '../config/env';
 import { ChatModel } from '../models/ChatModel';
 import { MessageModel } from '../models/MessageModel';
 import { UserModel } from '../models/UserModel';
-import { sendPushNotification } from '../config/firebase';
+import { sendPushNotification, sendDataOnlyPush } from '../config/firebase';
 
 async function notifyChatParticipants(chatId: string, senderName: string, messagePreview: string, senderId: string) {
   const chat = await ChatModel.findById(chatId);
@@ -96,8 +96,26 @@ export const setupSocketHandlers = (io: Server) => {
     });
 
     // WebRTC Calling Signaling — targeted at the specific callee, not broadcast to everyone
-    socket.on('call_user', (data: { userToCall: string; signalData: any; from: string; name: string }) => {
-      io.to(`user_${data.userToCall}`).emit('call_incoming', { signal: data.signalData, from: data.from, name: data.name });
+    socket.on('call_user', async (data: { userToCall: string; signalData: any; from: string; name: string; callType?: 'voice' | 'video' }) => {
+      io.to(`user_${data.userToCall}`).emit('call_incoming', { signal: data.signalData, from: data.from, name: data.name, callType: data.callType });
+
+      // Also push a high-priority "incoming call" notification so the callee's phone
+      // rings even if the app is fully closed (a live socket connection alone can't
+      // wake a closed app — only a native push can).
+      try {
+        const callee = await UserModel.findById(data.userToCall).select('pushTokens');
+        if (callee?.pushTokens && callee.pushTokens.length > 0) {
+          const result = await sendDataOnlyPush(
+            callee.pushTokens,
+            { type: 'incoming_call', fromId: data.from, fromName: data.name, callType: data.callType || 'voice' }
+          );
+          if (result?.staleTokens && result.staleTokens.length > 0) {
+            await UserModel.findByIdAndUpdate(data.userToCall, { $pullAll: { pushTokens: result.staleTokens } });
+          }
+        }
+      } catch (err) {
+        console.error('Failed to send incoming-call push:', err);
+      }
     });
 
     socket.on('answer_call', (data: { to: string; signal: any }) => {
@@ -111,6 +129,17 @@ export const setupSocketHandlers = (io: Server) => {
     socket.on('end_call', (data: { to?: string }) => {
       if (data?.to) io.to(`user_${data.to}`).emit('call_ended');
       else socket.broadcast.emit('call_ended');
+
+      // Also tell the other side's native layer to cancel any ringing
+      // full-screen notification (covers the case where the app was closed
+      // and only ever saw the push, never the socket event).
+      if (data?.to) {
+        UserModel.findById(data.to).select('pushTokens').then(target => {
+          if (target?.pushTokens && target.pushTokens.length > 0) {
+            sendDataOnlyPush(target.pushTokens, { type: 'call_ended' }).catch(() => {});
+          }
+        }).catch(() => {});
+      }
     });
 
     socket.on('disconnect', () => {

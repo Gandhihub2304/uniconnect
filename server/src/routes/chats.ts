@@ -215,7 +215,7 @@ router.get('/:chatId/messages', authMiddleware, async (req: AuthRequest, res) =>
 
 router.post('/:chatId/messages', authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const { text, mediaUrl, mediaType, fileName, fileSize, isViewOnce, replyToId, disappearingTimer } = req.body;
+    const { text, mediaUrl, mediaType, fileName, fileSize, isViewOnce, replyToId, disappearingTimer, voiceDuration } = req.body;
     const chatId = req.params.chatId;
 
     const user = await UserModel.findById(req.user.id);
@@ -245,9 +245,10 @@ router.post('/:chatId/messages', authMiddleware, async (req: AuthRequest, res) =
       disappearingTimer: disappearingTimer || 'off',
       expiresAt,
       replyToId,
+      voiceDuration,
     });
 
-    const lastMsgText = isViewOnce ? '📷 1x View Once Photo' : (text || (mediaType === 'image' ? '📷 Photo' : mediaType === 'document' ? '📄 Document' : 'Sent media'));
+    const lastMsgText = isViewOnce ? '📷 1x View Once Photo' : (text || (mediaType === 'image' ? '📷 Photo' : mediaType === 'document' ? '📄 Document' : mediaType === 'audio' ? '🎙️ Voice Note' : 'Sent media'));
 
     await ChatModel.findByIdAndUpdate(chatId, {
       lastMessage: lastMsgText,

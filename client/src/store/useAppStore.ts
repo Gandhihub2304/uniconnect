@@ -72,9 +72,21 @@ interface AppState {
   setIncomingCall: (call: AppState['incomingCall']) => void;
   acceptIncomingCall: () => void;
 
+  // Set when the app was launched by tapping Accept on the native full-screen incoming-call
+  // notification (app was closed, so the native layer had no live WebRTC offer to hand off) —
+  // once the real call_incoming socket event arrives with the actual offer, it's auto-accepted
+  // instead of showing the in-app ring screen a second time.
+  autoAcceptCallFromId: string | null;
+  setAutoAcceptCallFromId: (fromId: string | null) => void;
+
   pendingChatUserId: string | null;
   openChatWithUser: (userId: string) => void;
   clearPendingChatUser: () => void;
+
+  // Shared unread-chats count, computed once and read by LeftSidebar/BottomNav/TopBar
+  // instead of each fetching /api/chats independently on mount.
+  unreadChatsCount: number;
+  setUnreadChatsCount: (count: number) => void;
 }
 
 const loadSavedAccounts = (): SavedAccount[] => {
@@ -211,7 +223,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     incomingCall: null,
   } : {}),
 
+  autoAcceptCallFromId: null,
+  setAutoAcceptCallFromId: (fromId) => set({ autoAcceptCallFromId: fromId }),
+
   pendingChatUserId: null,
   openChatWithUser: (userId) => set({ activeTab: 'chats', pendingChatUserId: userId }),
   clearPendingChatUser: () => set({ pendingChatUserId: null }),
+
+  unreadChatsCount: 0,
+  setUnreadChatsCount: (count) => set({ unreadChatsCount: count }),
 }));

@@ -58,3 +58,29 @@ export const sendPushNotification = async (
     console.error('Failed to send push notification:', error.message || error);
   }
 };
+
+// Data-only push (no `notification` block) so the app's own
+// FirebaseMessagingService fully controls presentation — used for incoming
+// calls, which need a custom full-screen ringing UI + ringtone rather than
+// Android's default system-tray notification.
+export const sendDataOnlyPush = async (tokens: string[], data: Record<string, string>) => {
+  if (!initialized || tokens.length === 0) return;
+
+  try {
+    const response = await getMessaging().sendEachForMulticast({
+      tokens,
+      data,
+      android: { priority: 'high' },
+    });
+
+    const staleTokens: string[] = [];
+    response.responses.forEach((r, idx) => {
+      if (!r.success && r.error && r.error.code === 'messaging/registration-token-not-registered') {
+        staleTokens.push(tokens[idx]);
+      }
+    });
+    return { successCount: response.successCount, staleTokens };
+  } catch (error: any) {
+    console.error('Failed to send data-only push:', error.message || error);
+  }
+};

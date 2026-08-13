@@ -1,16 +1,13 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Home, Compass, Film, MessageCircle, User } from 'lucide-react';
 import { useAppStore, NavTab } from '@/store/useAppStore';
-import { apiGet } from '@/lib/api';
-import { getSocket } from '@/lib/socket';
 import { useLongPress } from '@/lib/useLongPress';
 import { AccountSwitcher } from './AccountSwitcher';
 
 export const BottomNav: React.FC = () => {
-  const { activeTab, setActiveTab, user } = useAppStore();
-  const [unreadChats, setUnreadChats] = useState(0);
+  const { activeTab, setActiveTab, user, unreadChatsCount } = useAppStore();
   const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
 
   const profileLongPress = useLongPress(
@@ -18,26 +15,11 @@ export const BottomNav: React.FC = () => {
     () => setActiveTab('profile')
   );
 
-  useEffect(() => {
-    const refreshUnread = async () => {
-      try {
-        const data = await apiGet('/api/chats');
-        if (data.success) {
-          setUnreadChats(data.chats.reduce((sum: number, c: any) => sum + (c.unread || c.unreadCount || 0), 0));
-        }
-      } catch { /* silent */ }
-    };
-    refreshUnread();
-    const socket = getSocket();
-    socket?.on('new_message', refreshUnread);
-    return () => { socket?.off('new_message', refreshUnread); };
-  }, []);
-
   const navItems: { id: NavTab; label: string; icon: React.ElementType; badge?: number }[] = [
     { id: 'home', label: 'Home', icon: Home },
     { id: 'explore', label: 'Explore', icon: Compass },
     { id: 'reels', label: 'Reels', icon: Film },
-    { id: 'chats', label: 'Messages', icon: MessageCircle, badge: unreadChats > 0 ? unreadChats : undefined },
+    { id: 'chats', label: 'Messages', icon: MessageCircle, badge: unreadChatsCount > 0 ? unreadChatsCount : undefined },
     { id: 'profile', label: 'Profile', icon: User },
   ];
 

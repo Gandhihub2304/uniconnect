@@ -1,19 +1,16 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Home, MessageCircle, Compass, Film,
   Bookmark, User, Settings, LogOut, Camera
 } from 'lucide-react';
 import { useAppStore, NavTab } from '@/store/useAppStore';
-import { apiGet } from '@/lib/api';
-import { getSocket } from '@/lib/socket';
 import { useLongPress } from '@/lib/useLongPress';
 import { AccountSwitcher } from './AccountSwitcher';
 
 export const LeftSidebar: React.FC = () => {
-  const { activeTab, setActiveTab, user, logout } = useAppStore();
-  const [unreadChats, setUnreadChats] = useState(0);
+  const { activeTab, setActiveTab, user, logout, unreadChatsCount } = useAppStore();
   const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
 
   const avatarLongPress = useLongPress(
@@ -21,26 +18,11 @@ export const LeftSidebar: React.FC = () => {
     () => setActiveTab('profile')
   );
 
-  useEffect(() => {
-    const refreshUnread = async () => {
-      try {
-        const data = await apiGet('/api/chats');
-        if (data.success) {
-          setUnreadChats(data.chats.reduce((sum: number, c: any) => sum + (c.unreadCount || 0), 0));
-        }
-      } catch { /* silent */ }
-    };
-    refreshUnread();
-    const socket = getSocket();
-    socket?.on('new_message', refreshUnread);
-    return () => { socket?.off('new_message', refreshUnread); };
-  }, []);
-
   const navItems: { id: NavTab; label: string; icon: React.ElementType; badge?: number | string }[] = [
     { id: 'home',    label: 'Home',     icon: Home },
     { id: 'explore', label: 'Explore',  icon: Compass },
     { id: 'reels',   label: 'Reels',    icon: Film },
-    { id: 'chats',   label: 'Messages', icon: MessageCircle, badge: unreadChats > 0 ? unreadChats : undefined },
+    { id: 'chats',   label: 'Messages', icon: MessageCircle, badge: unreadChatsCount > 0 ? unreadChatsCount : undefined },
     { id: 'saved',   label: 'Saved',    icon: Bookmark },
     { id: 'profile', label: 'Profile',  icon: User },
     { id: 'settings', label: 'Settings', icon: Settings },
